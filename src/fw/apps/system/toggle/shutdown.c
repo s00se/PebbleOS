@@ -12,7 +12,7 @@
 #include "resource/resource_ids.auto.h"
 #include "shell/normal/battery_ui.h"
 
-static void prv_do_shutdown(void *unused) {
+static void prv_do_shutdown(void *data) {
   battery_ui_handle_shut_down();
 }
 
