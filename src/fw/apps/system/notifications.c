@@ -2,8 +2,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "notifications.h"
+#include "notifications_pin_entry.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "applib/app.h"
@@ -26,6 +28,7 @@
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/blob_db/pin_db.h"
+#include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/notifications/notification_storage.h"
 #include "pbl/services/timeline/notification_layout.h"
 #include "shell/prefs.h"
@@ -58,6 +61,9 @@ typedef struct NotificationsData {
 #if PBL_ROUND
   StatusBarLayer status_bar_layer;
 #endif
+  NotifPinEntryData pin_entry;
+  bool pin_entry_inited;
+  bool pin_verified;
 } NotificationsData;
 
 static NotificationsData *s_data = NULL;
@@ -763,6 +769,55 @@ static void prv_push_window(NotificationsData *data) {
 }
 
 ////////////////////
+// PIN protection
+
+static void prv_wrong_pin_dialog_push(NotificationsData *data) {
+  SimpleDialog *dialog = simple_dialog_create("Wrong PIN");
+  Dialog *d = simple_dialog_get_dialog(dialog);
+  dialog_set_text(d, i18n_get("Wrong PIN", data));
+  dialog_set_icon(d, RESOURCE_ID_RESULT_FAILED_LARGE);
+  dialog_set_timeout(d, 1500);
+  app_simple_dialog_push(dialog);
+}
+
+static void prv_pin_entry_callback(const uint8_t *digits, void *context) {
+  NotificationsData *data = context;
+
+  uint8_t stored[NOTIF_PIN_LEN];
+  alerts_preferences_get_notif_pin(stored);
+
+  if (memcmp(digits, stored, NOTIF_PIN_LEN) == 0) {
+    data->pin_verified = true;
+    app_window_stack_pop(true);
+  } else {
+    prv_wrong_pin_dialog_push(data);
+    // Reset entry so the user can try again after dismissing the dialog
+    data->pin_entry.current_pos = 0;
+    memset(data->pin_entry.digits, 0, NOTIF_PIN_LEN);
+    data->pin_entry.pin_confirmed = false;
+    layer_mark_dirty(&data->pin_entry.window.layer);
+  }
+}
+
+static void prv_pin_window_on_unload(NotifPinEntryData *pin) {
+  NotificationsData *data = pin->callback_context;
+  if (!data->pin_verified) {
+    // User backed out without entering the correct PIN — exit the app
+    app_window_stack_pop(false);
+  }
+  // notif_pin_entry_deinit is called from prv_handle_deinit, not here,
+  // because calling window_deinit from within a window unload handler is unsafe.
+}
+
+static void prv_push_pin_entry_window(NotificationsData *data) {
+  notif_pin_entry_init(&data->pin_entry, i18n_get("Enter PIN", data),
+                       prv_pin_entry_callback, data);
+  data->pin_entry.on_unload = prv_pin_window_on_unload;
+  data->pin_entry_inited = true;
+  app_window_stack_push(notif_pin_entry_get_window(&data->pin_entry), true);
+}
+
+////////////////////
 // App boilerplate
 
 static void prv_handle_init(void) {
@@ -778,6 +833,10 @@ static void prv_handle_init(void) {
   prv_load_notification_storage(data);
 
   prv_push_window(data);
+
+  if (alerts_preferences_get_notif_pin_enabled() && alerts_preferences_notif_pin_is_set()) {
+    prv_push_pin_entry_window(data);
+  }
 }
 
 static void prv_handle_deinit(void) {
@@ -789,6 +848,11 @@ static void prv_handle_deinit(void) {
   event_service_client_unsubscribe(&data->notification_event_info);
   prv_loaded_notification_list_deinit(data->loaded_notification_list);
   prv_notification_list_deinit(data->notification_list);
+
+  if (data->pin_entry_inited) {
+    notif_pin_entry_deinit(&data->pin_entry);
+    data->pin_entry_inited = false;
+  }
 
   i18n_free_all(data);
   app_free(data);

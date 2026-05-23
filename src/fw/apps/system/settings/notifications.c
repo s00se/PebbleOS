@@ -6,6 +6,8 @@
 #include "option_menu.h"
 #include "window.h"
 
+#include "apps/system/notifications_pin_entry.h"
+
 #include "applib/event_service_client.h"
 #include "applib/fonts/fonts.h"
 #include "applib/ui/action_menu_window_private.h"
@@ -28,6 +30,7 @@
 #include "util/time/time.h"
 
 #include <stdio.h>
+#include <string.h>
 
 // Offset between vibe intensity menu item index and vibe intensity enum values
 #define INTENSITY_ROW_OFFSET 1
@@ -35,6 +38,8 @@
 typedef struct {
   SettingsCallbacks callbacks;
   EventServiceInfo battery_connection_event_info;
+  NotifPinEntryData pin_entry;
+  bool pin_entry_inited;
 } SettingsNotificationsData;
 
 enum NotificationsItem {
@@ -47,6 +52,8 @@ enum NotificationsItem {
   NotificationsItemVibeDelay,
   NotificationsItemBacklight,
   NotificationsItemStatusBarStyle,
+  NotificationsItemPinLock,
+  NotificationsItemSetPin,
   NotificationsItem_Count,
 };
 
@@ -297,6 +304,31 @@ static void prv_status_bar_style_menu_push(SettingsNotificationsData *data) {
       s_status_bar_style_labels, data);
 }
 
+// PIN Protection
+////////////////////////
+
+static void prv_set_pin_window_on_unload(NotifPinEntryData *pin) {
+  // notif_pin_entry_deinit is called from prv_deinit_cb, not here.
+  settings_menu_reload_data(SettingsMenuItemNotifications);
+}
+
+static void prv_set_pin_callback(const uint8_t *digits, void *context) {
+  SettingsNotificationsData *data = context;
+  alerts_preferences_set_notif_pin(digits);
+  data->pin_entry.pin_confirmed = true;
+  app_window_stack_pop(true);
+}
+
+static void prv_set_pin_menu_push(SettingsNotificationsData *data) {
+  const char *label = alerts_preferences_notif_pin_is_set() ?
+      i18n_noop("Change PIN") : i18n_noop("Set PIN");
+  notif_pin_entry_init(&data->pin_entry, i18n_get(label, data),
+                       prv_set_pin_callback, data);
+  data->pin_entry.on_unload = prv_set_pin_window_on_unload;
+  data->pin_entry_inited = true;
+  app_window_stack_push(notif_pin_entry_get_window(&data->pin_entry), true);
+}
+
 // Menu Layer Callbacks
 ////////////////////////
 
@@ -356,6 +388,25 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
       subtitle = s_status_bar_style_labels[prv_status_bar_style_get_selection_index()];
       break;
     }
+    case NotificationsItemPinLock: {
+      /// String within Settings->Notifications for PIN protection toggle
+      title = i18n_noop("PIN Lock");
+      if (!alerts_preferences_notif_pin_is_set()) {
+        subtitle = i18n_noop("Not Set");
+      } else {
+        subtitle = alerts_preferences_get_notif_pin_enabled() ?
+                   i18n_noop("On") : i18n_noop("Off");
+      }
+      break;
+    }
+    case NotificationsItemSetPin: {
+      /// String within Settings->Notifications for setting or changing the PIN
+      title = alerts_preferences_notif_pin_is_set() ?
+              i18n_noop("Change PIN") : i18n_noop("Set PIN");
+      subtitle = alerts_preferences_notif_pin_is_set() ?
+                 i18n_noop("Configured") : i18n_noop("Not set");
+      break;
+    }
     default:
       WTF;
   }
@@ -365,6 +416,10 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
 
 static void prv_deinit_cb(SettingsCallbacks *context) {
   SettingsNotificationsData *data = (SettingsNotificationsData *)context;
+  if (data->pin_entry_inited) {
+    notif_pin_entry_deinit(&data->pin_entry);
+    data->pin_entry_inited = false;
+  }
   i18n_free_all(data);
   app_free(data);
 }
@@ -398,6 +453,17 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
     case NotificationsItemStatusBarStyle:
       prv_status_bar_style_menu_push(data);
       break;
+    case NotificationsItemPinLock:
+      if (!alerts_preferences_notif_pin_is_set()) {
+        // Must configure a PIN first; redirect to Set PIN flow
+        prv_set_pin_menu_push(data);
+        return;
+      }
+      alerts_preferences_set_notif_pin_enabled(!alerts_preferences_get_notif_pin_enabled());
+      break;
+    case NotificationsItemSetPin:
+      prv_set_pin_menu_push(data);
+      return;
     default:
       WTF;
   }

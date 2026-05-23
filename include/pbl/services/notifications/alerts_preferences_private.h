@@ -81,6 +81,24 @@ bool alerts_preferences_dnd_is_smart_enabled(void);
 
 void alerts_preferences_dnd_set_smart_enabled(bool enable);
 
+//! Number of digits in the notification history PIN.
+#define NOTIF_PIN_LEN 3
+
+//! @return true if PIN protection is enabled for notification history
+bool alerts_preferences_get_notif_pin_enabled(void);
+
+//! Enable or disable PIN protection for notification history.
+void alerts_preferences_set_notif_pin_enabled(bool enabled);
+
+//! @return true if a PIN has been configured (i.e. Set PIN has been completed)
+bool alerts_preferences_notif_pin_is_set(void);
+
+//! Copy the stored PIN into @p pin (array of NOTIF_PIN_LEN digits, each 0–9).
+void alerts_preferences_get_notif_pin(uint8_t pin[NOTIF_PIN_LEN]);
+
+//! Persist a new PIN (array of NOTIF_PIN_LEN digits, each 0–9).
+void alerts_preferences_set_notif_pin(const uint8_t pin[NOTIF_PIN_LEN]);
+
 //! Lock the alerts preferences mutex. Must be paired with alerts_preferences_unlock().
 void alerts_preferences_lock(void);
 

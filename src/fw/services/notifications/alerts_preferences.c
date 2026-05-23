@@ -91,6 +91,13 @@ static bool s_notification_backlight = true;  // true = enable backlight (defaul
 #define PREF_KEY_NOTIF_STATUS_BAR_STYLE "notifStatusBarStyle"
 static NotificationStatusBarStyle s_notification_status_bar_style = NotificationStatusBarStyle_Default;
 
+#define PREF_KEY_NOTIF_PIN_ENABLED "notifPinEnabled"
+static bool s_notif_pin_enabled = false;
+
+#define PREF_KEY_NOTIF_PIN "notifPin"
+static uint8_t s_notif_pin[NOTIF_PIN_LEN] = {0, 0, 0};
+static bool s_notif_pin_is_set = false;
+
 ///////////////////////////////////
 //! Legacy preference keys
 ///////////////////////////////////
@@ -338,6 +345,14 @@ void alerts_preferences_init(void) {
   RESTORE_PREF(PREF_KEY_NOTIF_VIBE_DELAY, s_notification_vibe_delay);
   RESTORE_PREF(PREF_KEY_NOTIF_BACKLIGHT, s_notification_backlight);
   RESTORE_PREF(PREF_KEY_NOTIF_STATUS_BAR_STYLE, s_notification_status_bar_style);
+  RESTORE_PREF(PREF_KEY_NOTIF_PIN_ENABLED, s_notif_pin_enabled);
+  // Detect whether a PIN has been saved (both key lengths for compat).
+  if (settings_file_get(&file, PREF_KEY_NOTIF_PIN, strlen(PREF_KEY_NOTIF_PIN),
+                         s_notif_pin, sizeof(s_notif_pin)) == S_SUCCESS ||
+      settings_file_get(&file, PREF_KEY_NOTIF_PIN, strlen(PREF_KEY_NOTIF_PIN) + 1,
+                         s_notif_pin, sizeof(s_notif_pin)) == S_SUCCESS) {
+    s_notif_pin_is_set = true;
+  }
 #undef RESTORE_PREF
 
   prv_migrate_legacy_dnd_schedule(&file);
@@ -611,6 +626,29 @@ bool alerts_preferences_dnd_is_smart_enabled(void) {
 void alerts_preferences_dnd_set_smart_enabled(bool enable) {
   s_do_not_disturb_smart_dnd_enabled = enable;
   SET_PREF(PREF_KEY_DND_SMART_ENABLED, s_do_not_disturb_smart_dnd_enabled);
+}
+
+bool alerts_preferences_get_notif_pin_enabled(void) {
+  return s_notif_pin_enabled;
+}
+
+void alerts_preferences_set_notif_pin_enabled(bool enabled) {
+  s_notif_pin_enabled = enabled;
+  SET_PREF(PREF_KEY_NOTIF_PIN_ENABLED, s_notif_pin_enabled);
+}
+
+bool alerts_preferences_notif_pin_is_set(void) {
+  return s_notif_pin_is_set;
+}
+
+void alerts_preferences_get_notif_pin(uint8_t pin[NOTIF_PIN_LEN]) {
+  memcpy(pin, s_notif_pin, NOTIF_PIN_LEN);
+}
+
+void alerts_preferences_set_notif_pin(const uint8_t pin[NOTIF_PIN_LEN]) {
+  memcpy(s_notif_pin, pin, NOTIF_PIN_LEN);
+  s_notif_pin_is_set = true;
+  prv_set_pref(PREF_KEY_NOTIF_PIN, strlen(PREF_KEY_NOTIF_PIN), s_notif_pin, NOTIF_PIN_LEN);
 }
 
 void alerts_preferences_lock(void) {
