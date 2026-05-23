@@ -346,7 +346,9 @@ void alerts_preferences_init(void) {
   RESTORE_PREF(PREF_KEY_NOTIF_BACKLIGHT, s_notification_backlight);
   RESTORE_PREF(PREF_KEY_NOTIF_STATUS_BAR_STYLE, s_notification_status_bar_style);
   RESTORE_PREF(PREF_KEY_NOTIF_PIN_ENABLED, s_notif_pin_enabled);
-  // Detect whether a PIN has been saved (both key lengths for compat).
+  // Detect whether a PIN has been saved. Check both key lengths (without and
+  // with NUL terminator) to match the behaviour of the RESTORE_PREF macro used
+  // for other keys in this file.
   if (settings_file_get(&file, PREF_KEY_NOTIF_PIN, strlen(PREF_KEY_NOTIF_PIN),
                          s_notif_pin, sizeof(s_notif_pin)) == S_SUCCESS ||
       settings_file_get(&file, PREF_KEY_NOTIF_PIN, strlen(PREF_KEY_NOTIF_PIN) + 1,

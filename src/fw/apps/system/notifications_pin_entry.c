@@ -111,7 +111,8 @@ static void prv_click_config_provider(NotifPinEntryData *data) {
       (ClickHandler)prv_up_click_handler);
   window_single_repeating_click_subscribe(BUTTON_ID_DOWN, 80,
       (ClickHandler)prv_down_click_handler);
-  // Brief delay gives visible action-bar feedback on select
+  // Brief delay (25 ms) keeps the window responsive while giving the action-bar
+  // check icon time to render visibly before the window transitions.
   window_multi_click_subscribe(BUTTON_ID_SELECT, 1, 2, 25, true,
       (ClickHandler)prv_select_click_handler);
 }

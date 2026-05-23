@@ -807,6 +807,8 @@ static void prv_pin_window_on_unload(NotifPinEntryData *pin) {
   }
   // notif_pin_entry_deinit is called from prv_handle_deinit, not here,
   // because calling window_deinit from within a window unload handler is unsafe.
+  // When the user backs out (BACK button), the OS pops the PIN window from the
+  // stack, triggering this unload handler, before control returns to the app.
 }
 
 static void prv_push_pin_entry_window(NotificationsData *data) {
