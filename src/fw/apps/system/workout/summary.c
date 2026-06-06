@@ -109,6 +109,12 @@ static void prv_render_activity_type(GContext *ctx, Layer *layer, KinoReel *icon
 #else
   const int16_t icon_x_nudge = 0;
 #endif
+#if PBL_RECT && (PBL_DISPLAY_HEIGHT > 168)
+  // Keep the icon/title block vertically centered on taller rectangular displays.
+  const int16_t rect_vertical_offset = (PBL_DISPLAY_HEIGHT - 168) / 2;
+#else
+  const int16_t rect_vertical_offset = 0;
+#endif
 
   GRect drawing_rect = grect_inset(layer->bounds, GEdgeInsets(0, rl_margin));
 
@@ -116,11 +122,11 @@ static void prv_render_activity_type(GContext *ctx, Layer *layer, KinoReel *icon
   const int icon_x = drawing_rect.origin.x + PBL_IF_RECT_ELSE(0, (rl_margin / 2))
                    + (drawing_rect.size.w / 2) - (icon_size.w / 2)
                    + icon_x_nudge;
-  const int icon_y = PBL_IF_RECT_ELSE(45, 49);
+  const int icon_y = PBL_IF_RECT_ELSE(45 + rect_vertical_offset, 49);
   kino_reel_draw(icon, ctx, GPoint(icon_x, icon_y));
 
   const int name_x = drawing_rect.origin.x + PBL_IF_RECT_ELSE(0, (rl_margin / 2));
-  const int name_y = PBL_IF_RECT_ELSE(107, 109);
+  const int name_y = PBL_IF_RECT_ELSE(107 + rect_vertical_offset, 109);
   GRect name_rect = GRect(name_x, name_y, drawing_rect.size.w, 32);
 
   graphics_context_set_text_color(ctx, TEXT_COLOR);
