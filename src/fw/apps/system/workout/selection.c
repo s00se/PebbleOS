@@ -83,8 +83,6 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
   const char *title = workout_utils_get_name_for_activity(activity_type);
   const GBitmap *icon = &selection_window->workout_icons[cell_index->row];
 
-  const int icon_top_padding = 11;
-  const int title_top_padding = PBL_IF_RECT_ELSE(11, cell_layer->is_highlighted ? 40 : 2);
   const int max_icon_w = PBL_IF_RECT_ELSE(55, cell_layer->bounds.size.w);
   const int title_origin_x = PBL_IF_RECT_ELSE(max_icon_w, 0);
   const GTextAlignment title_alignment = PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter);
@@ -95,7 +93,10 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
 
   GRect image_bounds = gbitmap_get_bounds(icon);
   image_bounds.origin.x = (max_icon_w / 2) - (image_bounds.size.w / 2);
-  image_bounds.origin.y = icon_top_padding;
+  const int title_icon_spacing = 5;
+  const int combined_content_height = image_bounds.size.h + title_icon_spacing + title_height;
+  image_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - image_bounds.size.h) / 2,
+      cell_layer->is_highlighted ? (cell_layer->bounds.size.h - combined_content_height) / 2 : 0);
 
 #if PBL_COLOR
   GCompOp compositing_mode = GCompOpSet;
@@ -116,7 +117,9 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
 
   GRect title_bounds = cell_layer->bounds;
   title_bounds.origin.x = title_origin_x;
-  title_bounds.origin.y = title_top_padding;
+  title_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - title_height) / 2,
+      cell_layer->is_highlighted ? image_bounds.origin.y + image_bounds.size.h + title_icon_spacing
+                                 : (cell_layer->bounds.size.h - title_height) / 2);
   title_bounds.size.w -= title_origin_x;
   title_bounds.size.h = title_height;
 
