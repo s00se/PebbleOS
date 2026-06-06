@@ -102,7 +102,8 @@ static void prv_render_activity_type(GContext *ctx, Layer *layer, KinoReel *icon
   const GTextOverflowMode overflow_mode = GTextOverflowModeWordWrap;
   const GTextAlignment alignment = GTextAlignmentCenter;
   const int16_t rl_margin = PBL_IF_RECT_ELSE(4, 16);
-  // 200x228 displays need an extra left shift so Workout/Run/Walk render centered.
+  // 200x228 displays need a 2px left nudge; with a 1px nudge these icons still appear
+  // slightly right-shifted in the workout summary screen.
 #if (PBL_DISPLAY_WIDTH == 200) && (PBL_DISPLAY_HEIGHT == 228)
   const int16_t icon_x_nudge = -2;
 #else
