@@ -102,12 +102,11 @@ static void prv_render_activity_type(GContext *ctx, Layer *layer, KinoReel *icon
   const GTextOverflowMode overflow_mode = GTextOverflowModeWordWrap;
   const GTextAlignment alignment = GTextAlignmentCenter;
   const int16_t rl_margin = PBL_IF_RECT_ELSE(4, 16);
-  // qemu_emery renders these workout icons one pixel to the right compared to flint.
-  // Apply a board-specific nudge so Workout/Run/Walk remain visually centered.
-#if defined(CONFIG_BOARD_QEMU_EMERY)
-  const int16_t emery_icon_x_nudge = -1;
+  // 200x228 displays need an extra left shift so Workout/Run/Walk render centered.
+#if (PBL_DISPLAY_WIDTH == 200) && (PBL_DISPLAY_HEIGHT == 228)
+  const int16_t icon_x_nudge = -2;
 #else
-  const int16_t emery_icon_x_nudge = 0;
+  const int16_t icon_x_nudge = 0;
 #endif
 
   GRect drawing_rect = grect_inset(layer->bounds, GEdgeInsets(0, rl_margin));
@@ -115,7 +114,7 @@ static void prv_render_activity_type(GContext *ctx, Layer *layer, KinoReel *icon
   const GSize icon_size = kino_reel_get_size(icon);
   const int icon_x = drawing_rect.origin.x + PBL_IF_RECT_ELSE(0, (rl_margin / 2))
                    + (drawing_rect.size.w / 2) - (icon_size.w / 2)
-                   + emery_icon_x_nudge;
+                   + icon_x_nudge;
   const int icon_y = PBL_IF_RECT_ELSE(45, 49);
   kino_reel_draw(icon, ctx, GPoint(icon_x, icon_y));
 
