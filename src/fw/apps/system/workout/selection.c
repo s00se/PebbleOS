@@ -28,6 +28,7 @@ typedef struct WorkoutSelectionWindow {
   SelectWorkoutCallback select_workout_cb;
 } WorkoutSelectionWindow;
 
+// Matches prior visual spacing between icon and title when shown as a stacked pair.
 static const int s_workout_selection_title_icon_spacing = 5;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
