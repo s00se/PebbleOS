@@ -28,7 +28,7 @@ typedef struct WorkoutSelectionWindow {
   SelectWorkoutCallback select_workout_cb;
 } WorkoutSelectionWindow;
 
-static const int WORKOUT_SELECTION_TITLE_ICON_SPACING = 5;
+static const int s_workout_selection_title_icon_spacing = 5;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //! Helpers
@@ -96,7 +96,7 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
   GRect image_bounds = gbitmap_get_bounds(icon);
   image_bounds.origin.x = (max_icon_w / 2) - (image_bounds.size.w / 2);
   const int combined_content_height =
-      image_bounds.size.h + WORKOUT_SELECTION_TITLE_ICON_SPACING + title_height;
+      image_bounds.size.h + s_workout_selection_title_icon_spacing + title_height;
   image_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - image_bounds.size.h) / 2,
       cell_layer->is_highlighted ? (cell_layer->bounds.size.h - combined_content_height) / 2 : 0);
 
@@ -121,7 +121,7 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
   title_bounds.origin.x = title_origin_x;
   title_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - title_height) / 2,
       cell_layer->is_highlighted
-          ? image_bounds.origin.y + image_bounds.size.h + WORKOUT_SELECTION_TITLE_ICON_SPACING
+          ? image_bounds.origin.y + image_bounds.size.h + s_workout_selection_title_icon_spacing
                                  : (cell_layer->bounds.size.h - title_height) / 2);
   title_bounds.size.w -= title_origin_x;
   title_bounds.size.h = title_height;
