@@ -95,10 +95,13 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
 
   GRect image_bounds = gbitmap_get_bounds(icon);
   image_bounds.origin.x = (max_icon_w / 2) - (image_bounds.size.w / 2);
-  const int combined_content_height =
+  const int rect_icon_origin_y = (cell_layer->bounds.size.h - image_bounds.size.h) / 2;
+  const int round_combined_content_height =
       image_bounds.size.h + s_workout_selection_title_icon_spacing + title_height;
-  image_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - image_bounds.size.h) / 2,
-      cell_layer->is_highlighted ? (cell_layer->bounds.size.h - combined_content_height) / 2 : 0);
+  const int round_content_origin_y =
+      (cell_layer->bounds.size.h - round_combined_content_height) / 2;
+  image_bounds.origin.y = PBL_IF_RECT_ELSE(rect_icon_origin_y,
+      cell_layer->is_highlighted ? round_content_origin_y : 0);
 
 #if PBL_COLOR
   GCompOp compositing_mode = GCompOpSet;
@@ -119,10 +122,11 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIn
 
   GRect title_bounds = cell_layer->bounds;
   title_bounds.origin.x = title_origin_x;
-  title_bounds.origin.y = PBL_IF_RECT_ELSE((cell_layer->bounds.size.h - title_height) / 2,
+  const int centered_title_origin_y = (cell_layer->bounds.size.h - title_height) / 2;
+  title_bounds.origin.y = PBL_IF_RECT_ELSE(centered_title_origin_y,
       cell_layer->is_highlighted
           ? image_bounds.origin.y + image_bounds.size.h + s_workout_selection_title_icon_spacing
-                                 : (cell_layer->bounds.size.h - title_height) / 2);
+                                 : centered_title_origin_y);
   title_bounds.size.w -= title_origin_x;
   title_bounds.size.h = title_height;
 
