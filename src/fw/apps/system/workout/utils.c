@@ -134,24 +134,7 @@ const char* workout_utils_get_detection_text_for_activity(ActivitySessionType ty
 }
 
 bool workout_utils_find_ongoing_activity_session(ActivitySession *session_out) {
-  bool found_session = false;
-
-  uint32_t num_sessions = ACTIVITY_MAX_ACTIVITY_SESSIONS_COUNT;
-  ActivitySession *sessions = app_zalloc_check(sizeof(ActivitySession) *
-                                               ACTIVITY_MAX_ACTIVITY_SESSIONS_COUNT);
-  activity_get_sessions(&num_sessions, sessions);
-
-  for (int i = num_sessions; i >= 0; i--) {
-    if (workout_service_is_workout_type_supported(sessions[i].type) && sessions[i].ongoing) {
-      if (session_out) {
-        memcpy(session_out, &sessions[i], sizeof(ActivitySession));
-      }
-      found_session = true;
-      break;
-    }
-  }
-
-  app_free(sessions);
-
-  return found_session;
+  // Automatic workout/walk/run detection is stubbed out: do not start a workout
+  // based on detected movement.
+  return false;
 }
