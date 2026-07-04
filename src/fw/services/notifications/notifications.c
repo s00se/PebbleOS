@@ -6,6 +6,7 @@
 #include "pbl/services/notifications/notification_storage.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 
+#include "applib/event_service_client.h"
 #include "applib/ui/vibes.h"
 #include "drivers/rtc.h"
 #include "drivers/battery.h"
@@ -28,6 +29,15 @@
 #include "pbl/services/vibes/vibe_intensity.h"
 
 #include <string.h>
+
+static EventServiceInfo s_bt_conn_event_info;
+
+static void prv_bt_connection_event_handler(PebbleEvent *e, void *context) {
+  if (e->bluetooth.connection.state == PebbleBluetoothConnectionEventStateDisconnected) {
+    PBL_LOG_DBG("BT disconnected, wiping notification history");
+    notification_storage_reset_and_init();
+  }
+}
 
 static void prv_notification_migration_iterator_callback(TimelineItem *notification,
     SerializedTimelineItemHeader *header, void *data) {
@@ -93,6 +103,11 @@ void vibe_intensity_init(void);
 
 void notifications_init(void) {
   notification_storage_init();
+  s_bt_conn_event_info = (EventServiceInfo) {
+    .type = PEBBLE_BT_CONNECTION_EVENT,
+    .handler = prv_bt_connection_event_handler,
+  };
+  event_service_client_subscribe(&s_bt_conn_event_info);
 }
 
 void notifications_add_notification(TimelineItem *notification) {
