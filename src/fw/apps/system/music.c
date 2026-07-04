@@ -194,7 +194,6 @@ static const int16_t ARTIST_BOUNDS_OFFSET = 3;
 static const int16_t TIME_BOUNDS_OFFSET = 2;
 
 static const uint32_t VOLUME_REPEAT_INTERVAL_MS = 400;
-static const uint32_t ACTION_BAR_TIMEOUT_MS = 2000;
 static const uint32_t VOLUME_ICON_TIMEOUT_MS = 2000;
 
 
@@ -253,7 +252,6 @@ typedef struct {
   bool pause_track_pos_updates;
 
   enum ActionBarState action_bar_state;
-  AppTimer *action_bar_revert_timer;
   AppTimer *volume_repeat_timer;
   bool volume_is_up;
 
@@ -517,12 +515,8 @@ static void prv_update_ui_state_skipping(MusicAppData *data, bool animated) {
                                      &data->icon_skip_forward, animated);
   action_bar_layer_set_icon_animated(&data->action_bar, BUTTON_BACKWARD,
                                      &data->icon_skip_backward, animated);
-  const bool show_volume_controls = shell_prefs_get_music_show_volume_controls();
   if (music_get_playback_state() == MusicPlayStatePaused) {
     action_bar_layer_set_icon_animated(&data->action_bar, BUTTON_ID_SELECT, &data->icon_play,
-                                       animated);
-  } else if (show_volume_controls) {
-    action_bar_layer_set_icon_animated(&data->action_bar, BUTTON_ID_SELECT, &data->icon_ellipsis,
                                        animated);
   } else {
     action_bar_layer_set_icon_animated(&data->action_bar, BUTTON_ID_SELECT, &data->icon_pause,
@@ -566,18 +560,6 @@ static void prv_set_action_bar_state(MusicAppData *data, enum ActionBarState sta
   prv_update_ui_state(data, true);
 }
 
-static void prv_action_bar_revert(void *context) {
-  MusicAppData *data = context;
-  data->action_bar_revert_timer = NULL;
-  prv_set_action_bar_state(data, ActionBarStateSkip);
-}
-
-static void reset_action_bar_revert_timer(MusicAppData *data) {
-  if (data->action_bar_revert_timer) {
-    app_timer_reschedule(data->action_bar_revert_timer, ACTION_BAR_TIMEOUT_MS);
-  }
-}
-
 static void prv_skip_click_handler(ClickRecognizerRef recognizer, void *context) {
   // no animations on tintin
   Animation *animation = prv_create_cassette_animation(context);
@@ -590,7 +572,6 @@ static void prv_skip_click_handler(ClickRecognizerRef recognizer, void *context)
 }
 
 static void prv_volume_click_handler(ClickRecognizerRef recognizer, void *context) {
-  reset_action_bar_revert_timer(context);
   // TODO: absolute volume + volume indicator, when that information is available.
   bool is_volume_up = (click_recognizer_get_button_id(recognizer) == BUTTON_ID_UP);
   prv_change_volume(is_volume_up);
@@ -601,24 +582,11 @@ static void prv_volume_click_handler(ClickRecognizerRef recognizer, void *contex
   }
 }
 
-static void prv_ellipsis_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (!shell_prefs_get_music_show_volume_controls()) {
-    music_command_send(MusicCommandTogglePlayPause);
-    return;
-  }
-
-  MusicAppData *data = context;
-  data->action_bar_revert_timer = app_timer_register(ACTION_BAR_TIMEOUT_MS, prv_action_bar_revert,
-                                                     data);
-  prv_set_action_bar_state(data, ActionBarStateVolume);
-}
-
 static void prv_toggle_playing(void) {
   music_command_send(MusicCommandTogglePlayPause);
 }
 
 static void prv_play_pause_click_handler(ClickRecognizerRef recognizer, void *context) {
-  reset_action_bar_revert_timer(context);
   prv_toggle_playing();
 }
 
@@ -669,13 +637,7 @@ static void prv_skipping_click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, prv_skip_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, prv_skip_click_handler);
   const bool show_volume_controls = shell_prefs_get_music_show_volume_controls();
-  if (music_get_playback_state() == MusicPlayStatePaused) {
-    window_single_click_subscribe(BUTTON_ID_SELECT, prv_play_pause_click_handler);
-  } else if (show_volume_controls) {
-    window_single_click_subscribe(BUTTON_ID_SELECT, prv_ellipsis_click_handler);
-  } else {
-    window_single_click_subscribe(BUTTON_ID_SELECT, prv_play_pause_click_handler);
-  }
+  window_single_click_subscribe(BUTTON_ID_SELECT, prv_play_pause_click_handler);
   if (show_volume_controls) {
     window_long_click_subscribe(BUTTON_ID_UP, 0, prv_volume_long_click_start_handler,
                                 prv_volume_long_click_end_handler);
@@ -1074,4 +1036,3 @@ const PebbleProcessMd* music_app_get_info(void) {
   };
   return (const PebbleProcessMd*) &s_app_info;
 }
-
