@@ -7,6 +7,7 @@
 #include "pbl/services/comm_session/session_analytics.h"
 #include "pbl/services/comm_session/session_internal.h"
 #include "pbl/services/comm_session/session_transport.h"
+#include "pbl/services/notifications/notification_storage.h"
 
 #include "applib/app_comm.h"
 #include "comm/ble/kernel_le_client/app_launch/app_launch.h"
@@ -249,6 +250,7 @@ void comm_session_close(CommSession *session, CommSessionCloseReason reason) {
 #ifndef CONFIG_RECOVERY_FW
     system_task_add_callback(dls_private_handle_disconnect, NULL);
 #endif
+    notification_storage_reset_and_init();
   }
 
   prv_put_comm_session_event(false, is_system);
