@@ -22,6 +22,7 @@
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
 #include "pbl/services/notifications/do_not_disturb.h"
+#include "kernel/util/standby.h"
 #include "system/logging.h"
 #include "system/passert.h"
 #ifdef CONFIG_ORIENTATION_MANAGER
@@ -29,6 +30,7 @@
 #endif 
 
 #define QUICK_LAUNCH_HOLD_MS (400)
+#define SHUTDOWN_HOLD_MS (2000)
 #define BIT_SET (1)
 #define BIT_CLEAR (0)
 #define COMBO_BACK_UP_BUTTONS ((BIT_SET << BUTTON_ID_BACK) | (BIT_SET << BUTTON_ID_UP))
@@ -40,6 +42,7 @@
 static ClickManager s_click_manager;
 static uint8_t s_buttons_pressed = BIT_CLEAR;
 static AppTimer *s_combo_back_hold_timer = NULL;
+static AppTimer *s_shutdown_hold_timer = NULL;
 static uint8_t s_active_combo_buttons = BIT_CLEAR;
 
 static bool prv_should_ignore_button_click(void) {
@@ -107,6 +110,30 @@ static bool prv_is_any_combo_active(void) {
   return (s_combo_back_hold_timer != NULL) ||
          prv_is_combo_pressed(COMBO_BACK_UP_BUTTONS) ||
          prv_is_combo_pressed(COMBO_UP_DOWN_BUTTONS);
+}
+
+static void prv_shutdown_hold_timer_callback(void *data) {
+  s_shutdown_hold_timer = NULL;
+  if (!prv_is_combo_pressed(COMBO_UP_DOWN_BUTTONS)) {
+    return;
+  }
+  
+  PBL_LOG_DBG("Shutdown triggered by holding UP and DOWN buttons");
+  enter_standby(RebootReasonCode_UserInitiated);
+}
+
+static void prv_check_shutdown_hold(void) {
+  if (prv_is_combo_pressed(COMBO_UP_DOWN_BUTTONS)) {
+    if (s_shutdown_hold_timer == NULL && s_combo_back_hold_timer == NULL) {
+      s_shutdown_hold_timer =
+          app_timer_register(SHUTDOWN_HOLD_MS, prv_shutdown_hold_timer_callback, NULL);
+    }
+  } else {
+    if (s_shutdown_hold_timer != NULL) {
+      app_timer_cancel(s_shutdown_hold_timer);
+      s_shutdown_hold_timer = NULL;
+    }
+  }
 }
 
 static void prv_combo_back_timer_callback(void *data) {
@@ -322,10 +349,12 @@ void watchface_handle_button_event(PebbleEvent *e) {
       s_buttons_pressed |= (BIT_SET << e->button.button_id);
       click_recognizer_handle_button_down(&s_click_manager.recognizers[e->button.button_id]);
       prv_check_combo_back_hold();
+      prv_check_shutdown_hold();
       break;
     case PEBBLE_BUTTON_UP_EVENT:
       s_buttons_pressed &= ~(BIT_SET << e->button.button_id);
       prv_check_combo_back_hold();
+      prv_check_shutdown_hold();
       click_recognizer_handle_button_up(&s_click_manager.recognizers[e->button.button_id]);
       break;
     default:
