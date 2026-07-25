@@ -42,7 +42,7 @@ static bool prv_get_notification(TimelineItem *notification,
     SerializedTimelineItemHeader *header, int fd);
 static void prv_set_header_status(SerializedTimelineItemHeader *header, uint8_t status, int fd);
 
-static void prv_hourly_wipe_cb(void *unused) {
+static void prv_hourly_wipe_cb(void *data) {
   const time_t local_time = time_utc_to_local(rtc_get_time());
   const int minute_of_hour = (local_time % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
   if (minute_of_hour == 1) {
