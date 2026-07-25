@@ -13,6 +13,9 @@
 #include "pbl/os/mutex.h"
 #include "system/passert.h"
 #include "pbl/util/iterator.h"
+#include "pbl/services/regular_timer.h"
+#include <pbl/drivers/rtc.h>
+#include "util/time/time.h"
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -32,10 +35,21 @@ static PebbleRecursiveMutex *s_notif_storage_mutex = NULL;
 
 static uint32_t s_write_offset;
 
+static RegularTimerInfo s_hourly_wipe_timer;
+
 static bool prv_iter_next(NotificationIterState *iter_state);
 static bool prv_get_notification(TimelineItem *notification,
     SerializedTimelineItemHeader *header, int fd);
 static void prv_set_header_status(SerializedTimelineItemHeader *header, uint8_t status, int fd);
+
+static void prv_hourly_wipe_cb(void *unused) {
+  const time_t local_time = time_utc_to_local(rtc_get_time());
+  const int minute_of_hour = (local_time % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE;
+  if (minute_of_hour == 1) {
+    PBL_LOG_DBG("Wiping notification history");
+    notification_storage_reset_and_init();
+  }
+}
 
 void notification_storage_init(void) {
   PBL_ASSERTN(s_notif_storage_mutex == NULL);
@@ -51,6 +65,11 @@ void notification_storage_init(void) {
   }
   s_write_offset = 0;
   s_notif_storage_mutex = mutex_create_recursive();
+
+  s_hourly_wipe_timer = (RegularTimerInfo) {
+    .cb = prv_hourly_wipe_cb,
+  };
+  regular_timer_add_minutes_callback(&s_hourly_wipe_timer);
 }
 
 void notification_storage_lock(void) {

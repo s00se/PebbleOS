@@ -29,6 +29,7 @@
 #include "stubs_serial.h"
 #include "stubs_sleep.h"
 #include "stubs_task_watchdog.h"
+#include "stubs_regular_timer.h"
 
 #define TEST_START FLASH_REGION_FILE_TEST_SPACE_BEGIN
 #define TEST_SIZE (FLASH_REGION_FILE_TEST_SPACE_END - \
