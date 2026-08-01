@@ -20,7 +20,7 @@
 
 #include <stdio.h>
 
-// Max size of the temperature and phrase displayed together
+// Max size of the "Tomorrow: %i° / %i°" string displayed in the subtitle
 #define WEATHER_APP_GLANCE_MAX_STRING_BUFFER_SIZE (WEATHER_SERVICE_MAX_SHORT_PHRASE_BUFFER_SIZE + 5)
 
 typedef struct LauncherAppGlanceWeather {
@@ -102,35 +102,56 @@ static void prv_weather_event_handler(PBL_UNUSED PebbleEvent *event, void *conte
   // Zero out the glance's title buffer
   const size_t weather_glance_title_size = sizeof(weather_glance->title);
   memset(weather_glance->title, 0, weather_glance_title_size);
-  // Choose the title we should display based on whether or not we have a forecast
-  const char *title = NULL_SAFE_FIELD_ACCESS(forecast, location_name,
-                                             weather_glance->fallback_title);
-  // Subtract 1 from the size as a shortcut for null terminating the title since we zero it out
-  // above
-  strncpy(weather_glance->title, title, weather_glance_title_size - 1);
+  if (forecast) {
+    const int today_high = forecast->today_high;
+    const int today_low = forecast->today_low;
+    const bool high_unknown = (today_high == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP);
+    const bool low_unknown = (today_low == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP);
+    if (high_unknown && low_unknown) {
+      /// Shown when neither today's high nor low temperature is known
+      strncpy(weather_glance->title, i18n_get("--° / --°", weather_glance),
+              weather_glance_title_size - 1);
+    } else if (low_unknown) {
+      /// Shown when only today's high temperature is known (e.g. "68° / --°")
+      snprintf(weather_glance->title, weather_glance_title_size,
+               i18n_get("%i° / --°", weather_glance), today_high);
+    } else if (high_unknown) {
+      /// Shown when only today's low temperature is known (e.g. "--° / 52°")
+      snprintf(weather_glance->title, weather_glance_title_size,
+               i18n_get("--° / %i°", weather_glance), today_low);
+    } else {
+      /// Today's high and low temperature (e.g. "68° / 52°")
+      snprintf(weather_glance->title, weather_glance_title_size,
+               i18n_get("%i° / %i°", weather_glance), today_high, today_low);
+    }
+  } else {
+    strncpy(weather_glance->title, weather_glance->fallback_title, weather_glance_title_size - 1);
+  }
 
   // Zero out the glance's subtitle buffer
   const size_t weather_glance_subtitle_size = sizeof(weather_glance->subtitle);
   memset(weather_glance->subtitle, 0, weather_glance_subtitle_size);
-  // We'll only set the subtitle if we have a default forecast
   if (forecast) {
-    if (forecast->current_temp == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP) {
-      /// Shown when the current temperature is unknown
-      const char *no_temperature_string = i18n_get("--°", weather_glance);
-      // Subtract 1 from the size as a shortcut for null terminating the subtitle since we zero it
-      // out above
-      strncpy(weather_glance->subtitle, no_temperature_string, weather_glance_subtitle_size - 1);
+    const int tmrw_high = forecast->tomorrow_high;
+    const int tmrw_low = forecast->tomorrow_low;
+    const bool high_unknown = (tmrw_high == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP);
+    const bool low_unknown = (tmrw_low == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP);
+    if (high_unknown && low_unknown) {
+      /// Shown when neither tomorrow's high nor low temperature is known
+      strncpy(weather_glance->subtitle, i18n_get("Tomorrow: --° / --°", weather_glance),
+              weather_glance_subtitle_size - 1);
+    } else if (low_unknown) {
+      /// Shown when only tomorrow's high temperature is known (e.g. "Tomorrow: 70° / --°")
+      snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
+               i18n_get("Tomorrow: %i° / --°", weather_glance), tmrw_high);
+    } else if (high_unknown) {
+      /// Shown when only tomorrow's low temperature is known (e.g. "Tomorrow: --° / 55°")
+      snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
+               i18n_get("Tomorrow: --° / %i°", weather_glance), tmrw_low);
     } else {
-      /// Shown when today's temperature and conditions phrase is known (e.g. "52° - Fair")
-      const char *temp_and_phrase_formatter = i18n_get("%i° - %s", weather_glance);
-      /// Today's current temperature (e.g. "68°")
-      const char *temp_only_formatter = i18n_get("%i°", weather_glance);
-      const char *localized_phrase = i18n_get(forecast->current_weather_phrase, weather_glance);
-      const char *formatter_string = strlen(localized_phrase) ? temp_and_phrase_formatter :
-                                     temp_only_formatter;
-      // It's safe to pass more arguments to snprintf() than might be used by formatter_string
-      snprintf(weather_glance->subtitle, weather_glance_subtitle_size, formatter_string,
-               forecast->current_temp, localized_phrase);
+      /// Tomorrow's high and low temperature (e.g. "Tomorrow: 70° / 55°")
+      snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
+               i18n_get("Tomorrow: %i° / %i°", weather_glance), tmrw_high, tmrw_low);
     }
   }
 
