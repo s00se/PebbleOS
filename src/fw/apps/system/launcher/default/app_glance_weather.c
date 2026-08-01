@@ -20,13 +20,8 @@
 
 #include <stdio.h>
 
-// Max size of the "Tomorrow: -40°C / -40°C" string displayed in the subtitle
+// Max size of the "Tomorrow: %i° / %i°" string displayed in the subtitle
 #define WEATHER_APP_GLANCE_MAX_STRING_BUFFER_SIZE (WEATHER_SERVICE_MAX_SHORT_PHRASE_BUFFER_SIZE + 5)
-
-// Temperatures from the weather service are in Fahrenheit; convert for display
-static int prv_fahrenheit_to_celsius(int fahrenheit) {
-  return (fahrenheit - 32) * 5 / 9;
-}
 
 typedef struct LauncherAppGlanceWeather {
   char title[APP_NAME_SIZE_BYTES];
@@ -118,31 +113,31 @@ static void prv_weather_event_handler(PBL_UNUSED PebbleEvent *event, void *conte
     if (high_unknown && low_unknown) {
       /// Shown when neither today's high nor low temperature is known
       if (has_phrase) {
-        /// e.g. "--°C / --°C - Fair"
+        /// e.g. "--° / --° - Fair"
         snprintf(weather_glance->title, weather_glance_title_size,
-                 i18n_get("--°C / --°C - %s", weather_glance), phrase);
+                 i18n_get("--° / --° - %s", weather_glance), phrase);
       } else {
-        strncpy(weather_glance->title, i18n_get("--°C / --°C", weather_glance),
+        strncpy(weather_glance->title, i18n_get("--° / --°", weather_glance),
                 weather_glance_title_size - 1);
       }
     } else if (low_unknown) {
-      /// Shown when only today's high temperature is known (e.g. "20°C / --°C - Fair")
+      /// Shown when only today's high temperature is known (e.g. "68° / --° - Fair")
       snprintf(weather_glance->title, weather_glance_title_size,
-               has_phrase ? i18n_get("%i°C / --°C - %s", weather_glance)
-                          : i18n_get("%i°C / --°C", weather_glance),
-               prv_fahrenheit_to_celsius(today_high), phrase);
+               has_phrase ? i18n_get("%i° / --° - %s", weather_glance)
+                          : i18n_get("%i° / --°", weather_glance),
+               today_high, phrase);
     } else if (high_unknown) {
-      /// Shown when only today's low temperature is known (e.g. "--°C / 11°C - Fair")
+      /// Shown when only today's low temperature is known (e.g. "--° / 52° - Fair")
       snprintf(weather_glance->title, weather_glance_title_size,
-               has_phrase ? i18n_get("--°C / %i°C - %s", weather_glance)
-                          : i18n_get("--°C / %i°C", weather_glance),
-               prv_fahrenheit_to_celsius(today_low), phrase);
+               has_phrase ? i18n_get("--° / %i° - %s", weather_glance)
+                          : i18n_get("--° / %i°", weather_glance),
+               today_low, phrase);
     } else {
-      /// Today's high and low temperature with optional forecast phrase (e.g. "20°C / 11°C - Fair")
+      /// Today's high and low temperature with optional forecast phrase (e.g. "68° / 52° - Fair")
       snprintf(weather_glance->title, weather_glance_title_size,
-               has_phrase ? i18n_get("%i°C / %i°C - %s", weather_glance)
-                          : i18n_get("%i°C / %i°C", weather_glance),
-               prv_fahrenheit_to_celsius(today_high), prv_fahrenheit_to_celsius(today_low), phrase);
+               has_phrase ? i18n_get("%i° / %i° - %s", weather_glance)
+                          : i18n_get("%i° / %i°", weather_glance),
+               today_high, today_low, phrase);
     }
   } else {
     strncpy(weather_glance->title, weather_glance->fallback_title, weather_glance_title_size - 1);
@@ -158,23 +153,23 @@ static void prv_weather_event_handler(PBL_UNUSED PebbleEvent *event, void *conte
     const bool low_unknown = (tmrw_low == WEATHER_SERVICE_LOCATION_FORECAST_UNKNOWN_TEMP);
     if (high_unknown && low_unknown) {
       /// Shown when neither tomorrow's high nor low temperature is known
-      strncpy(weather_glance->subtitle, i18n_get("Tomorrow: --°C / --°C", weather_glance),
+      strncpy(weather_glance->subtitle, i18n_get("Tomorrow: --° / --°", weather_glance),
               weather_glance_subtitle_size - 1);
     } else if (low_unknown) {
-      /// Shown when only tomorrow's high temperature is known (e.g. "Tomorrow: 21°C / --°C")
+      /// Shown when only tomorrow's high temperature is known (e.g. "Tomorrow: 70° / --°")
       snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
-               i18n_get("Tomorrow: %i°C / --°C", weather_glance),
-               prv_fahrenheit_to_celsius(tmrw_high));
+               i18n_get("Tomorrow: %i° / --°", weather_glance),
+               tmrw_high);
     } else if (high_unknown) {
-      /// Shown when only tomorrow's low temperature is known (e.g. "Tomorrow: --°C / 12°C")
+      /// Shown when only tomorrow's low temperature is known (e.g. "Tomorrow: --° / 55°")
       snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
-               i18n_get("Tomorrow: --°C / %i°C", weather_glance),
-               prv_fahrenheit_to_celsius(tmrw_low));
+               i18n_get("Tomorrow: --° / %i°", weather_glance),
+               tmrw_low);
     } else {
-      /// Tomorrow's high and low temperature in Celsius (e.g. "Tomorrow: 21°C / 12°C")
+      /// Tomorrow's high and low temperature (e.g. "Tomorrow: 70° / 55°")
       snprintf(weather_glance->subtitle, weather_glance_subtitle_size,
-               i18n_get("Tomorrow: %i°C / %i°C", weather_glance),
-               prv_fahrenheit_to_celsius(tmrw_high), prv_fahrenheit_to_celsius(tmrw_low));
+               i18n_get("Tomorrow: %i° / %i°", weather_glance),
+               tmrw_high, tmrw_low);
     }
   }
 
