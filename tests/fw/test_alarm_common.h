@@ -7,7 +7,7 @@
 #include "pbl/services/alarms/alarm.h"
 #include "pbl/services/alarms/alarm_pin.h"
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "resource/timeline_resource_ids.auto.h"
 #include "pbl/services/cron.h"
 #include "pbl/services/new_timer/new_timer.h"
@@ -15,7 +15,7 @@
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/timeline/item.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -128,7 +128,7 @@ static int s_num_alarms_fired = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //! Fakes
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 void prv_timer_kernel_bg_callback(void *data);
 

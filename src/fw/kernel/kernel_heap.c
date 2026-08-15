@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel_heap.h"
-#include "mcu/interrupts.h"
+#include "pbl/mcu/interrupts.h"
 #include "pbl/services/analytics/analytics.h"
-#include "util/heap.h"
+#include "pbl/util/heap.h"
 
 #include <cmsis_core.h>
 
@@ -69,7 +69,7 @@ Heap* kernel_heap_get(void) {
 
 // Serial Commands
 ///////////////////////////////////////////////////////////
-#ifdef MALLOC_INSTRUMENTATION
+#ifdef CONFIG_MALLOC_INSTRUMENTATION
 void command_dump_malloc_kernel(void) {
   heap_dump_malloc_instrumentation_to_dbgserial(&s_kernel_heap);
 }

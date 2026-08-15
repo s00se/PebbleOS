@@ -14,7 +14,7 @@
 
 #include "FreeRTOS.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "queue.h"
 #include "semphr.h"
 #include "pbl/services/new_timer/new_timer.h"
@@ -24,8 +24,8 @@
 #include "os/os_cputime.h"
 
 #if NRF52_SERIES
-#include "drivers/clocksource.h"
-#include "kernel/util/stop.h"
+#include <pbl/drivers/clocksource.h>
+#include "pbl/soc/nrf/sleep.h"
 #endif
 
 #define BLE_NPL_OS_ALIGNMENT 4
@@ -227,16 +227,16 @@ static inline void nrf52_clock_hfxo_request(void) {
   /* Any time NimBLE wants to turn on the HFXO, we are also going to have
    * pretty stringent wake latency requirements, so we must not do expensive
    * and slow things like waking the NOR flash up from DPD on interrupts.
-   * So, we disable stop mode at the same time as actually enabling the
+   * So, we disable full sleep at the same time as actually enabling the
    * HFXO.
    */
-  stop_mode_disable(InhibitorBluetooth);
+  soc_nrf_sleep_full_block();
   clocksource_hfxo_request();
 }
 
 static inline void nrf52_clock_hfxo_release(void) {
   clocksource_hfxo_release();
-  stop_mode_enable(InhibitorBluetooth);
+  soc_nrf_sleep_full_release();
 }
 
 #endif

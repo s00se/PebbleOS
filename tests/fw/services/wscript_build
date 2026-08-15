@@ -1,4 +1,4 @@
-from waftools.pebble_test import clar
+from tools.waf.pebble_test import clar
 
 import generate_c_byte_array
 import generate_timezone_data
@@ -92,6 +92,14 @@ clar(ctx,
     sources_ant_glob = \
         " src/fw/services/light/service.c",
     test_sources_ant_glob = "test_light.c",
+    override_includes=['getafix_backlight'])
+
+clar(ctx,
+    sources_ant_glob = \
+        " src/fw/services/light/als_screen_compensation_math.c" \
+        " src/fw/services/light/als_screen_compensation_region.c",
+    test_sources_ant_glob = "test_als_screen_compensation.c",
+    defines=['CONFIG_ALS_SCREEN_COMPENSATION', 'CONFIG_AMBIENT_LIGHT_BITS=16'],
     override_includes=['dummy_board'])
 
 clar(ctx,
@@ -248,6 +256,17 @@ clar(ctx,
 
 clar(ctx,
     sources_ant_glob = " ".join([
+        " src/fw/services/speaker/speaker_service.c " \
+        " src/fw/services/speaker/note_sequence.c " \
+        " src/fw/services/speaker/pcm_stream.c " \
+        " src/fw/services/speaker/track_player.c " \
+        " tests/fakes/fake_events.c"]),
+    test_sources_ant_glob = "test_speaker_service.c",
+    defines=['CONFIG_SPEAKER=1'],
+    override_includes=['dummy_board'])
+
+clar(ctx,
+    sources_ant_glob = " ".join([
         " src/fw/services/voice/transcription.c"]),
     test_sources_ant_glob = "test_transcription.c")
 
@@ -370,6 +389,7 @@ clar(ctx,
         "  tests/fakes/fake_events.c " \
         ,
     test_sources_ant_glob = "test_accel_manager.c",
+    defines=["CONFIG_SERVICE_ACCEL_MANAGER_BATCH_SAMPLES=25"],
     override_includes=['dummy_board'])
 
 clar(ctx,
@@ -450,9 +470,14 @@ clar(ctx,
     test_sources_ant_glob = "test_touch.c")
 
 clar(ctx,
+    sources_ant_glob = "src/fw/services/touch/touch_session.c" \
+        " tests/fakes/fake_rtc.c",
+    test_sources_ant_glob = "test_touch_session.c")
+
+clar(ctx,
     sources_ant_glob = \
         "src/fw/services/hrm/hrm_manager.c " \
-        "src/libos/tick.c " \
+        "lib/os/tick.c " \
         "tests/fakes/fake_events.c " \
         "tests/fakes/fake_rtc.c " \
         "tests/fakes/fake_accel_service.c ",

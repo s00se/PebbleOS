@@ -1,16 +1,16 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "audio_definitions.h"
-#include "drivers/gpio.h"
+#include <pbl/drivers/speaker/sf32lb52/audio_definitions.h>
+#include <pbl/drivers/gpio.h>
 #include "kernel/util/delay.h"
-#include "drivers/audio.h"
-#include "sf32lb_audio.h"
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/speaker/sf32lb52/sf32lb_audio.h>
 
 #define PA_POWER_DELAY_TIME      (200) /* us */
 
 void audio_init(AudioDevice* audio_device) {
-    gpio_output_init(&audio_device->pa_ctrl, GPIO_OType_PP, GPIO_Speed_2MHz);
+    gpio_output_init(&audio_device->pa_ctrl, GPIO_OType_PP);
     gpio_output_set(&audio_device->pa_ctrl, false);
     delay_us(PA_POWER_DELAY_TIME*10);
     audec_init(audio_device);

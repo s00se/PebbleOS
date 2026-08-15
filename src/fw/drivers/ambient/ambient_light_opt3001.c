@@ -3,15 +3,16 @@
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/ambient_light.h"
-#include "drivers/i2c.h"
-#include "drivers/periph_config.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/i2c.h>
 #include "kernel/util/sleep.h"
 #include "mfg/mfg_info.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <inttypes.h>
+
+PBL_LOG_MODULE_DEFINE(driver_ambient_opt3001, CONFIG_DRIVER_AMBIENT_LOG_LEVEL);
 
 static uint32_t s_sensor_light_dark_threshold;
 static bool s_initialized = false;
@@ -62,17 +63,22 @@ void ambient_light_init(void) {
   }
 
   if (mf != OPT3001_MFGID_VAL || id != OPT3001_DEVID_VAL) {
-    PBL_LOG_INFO("OPT3001 read successfully, but had incorrect manuf %04x, id %04x", mf, id);
+    PBL_LOG_ERR("OPT3001 read successfully, but had incorrect manuf %04x, id %04x", mf, id);
     return;
   }
-  
-  PBL_LOG_INFO("found OPT3001 with manuf %04x, id %04x", mf, id);
 
   if (BOARD_CONFIG.als_always_on) {
     prv_write_register(OPT3001_CONFIG, OPT3001_CONFIG_RANGE_AUTO | OPT3001_CONFIG_CONVTIME_100MSEC | OPT3001_CONFIG_MODE_CONTINUOUS);
   }
 
+  ambient_light_common_init();
   s_initialized = true;
+}
+
+void ambient_light_driver_set_state(bool active, bool sampling) {
+  // OPT3001 is configured at boot per BOARD_CONFIG.als_always_on; no gate needed.
+  (void)active;
+  (void)sampling;
 }
 
 uint32_t ambient_light_get_light_level(void) {
@@ -110,7 +116,9 @@ void ambient_light_set_dark_threshold(uint32_t new_threshold) {
 
 bool ambient_light_is_light(void) {
   // if the sensor is not enabled, always return that it is dark
-  return s_initialized && ambient_light_get_light_level() > s_sensor_light_dark_threshold;
+  // The threshold lives in the lux domain (see ambient_light_level_to_lux).
+  return s_initialized && ambient_light_level_to_lux(ambient_light_get_light_level()) >
+                              s_sensor_light_dark_threshold;
 }
 
 AmbientLightLevel ambient_light_level_to_enum(uint32_t light_level) {

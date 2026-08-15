@@ -32,6 +32,7 @@ config BACKLIGHT_PWM
 
 config BACKLIGHT_QEMU
     bool "QEMU"
+    default y if SOC_QEMU
     help
       Emulated backlight controller that writes to the QEMU
       pebble-display MMIO registers.
@@ -43,4 +44,8 @@ config BACKLIGHT_QEMU_COLOR
     help
       Enable support for RGB backlight colors in the QEMU backlight driver.
   
+module = DRIVER_BACKLIGHT
+module-str = Backlight
+source "subsys/logging/Kconfig.template.log_level"
+
 endif # BACKLIGHT

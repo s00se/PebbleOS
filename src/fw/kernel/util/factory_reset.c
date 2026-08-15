@@ -3,8 +3,8 @@
 
 #include "kernel/util/factory_reset.h"
 
-#include "drivers/rtc.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "flash_region/filesystem_regions.h"
 #include "kernel/event_loop.h"
 #include "kernel/util/standby.h"
@@ -16,12 +16,12 @@
 #include "shell/normal/app_idle_timeout.h"
 #include "system/bootbits.h"
 #include "system/firmware_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/reboot_reason.h"
 #include "system/reset.h"
 #include "kernel/util/sleep.h"
 
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
 #include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/blob_db/reminder_db.h"
 #include "pbl/services/filesystem/pfs.h"
@@ -73,18 +73,21 @@ void factory_reset(bool should_shutdown) {
 
   prv_factory_reset_non_pfs_data();
 
-#if !defined(RECOVERY_FW)
-  // pfs_format() holds the PFS mutex across the erase, blocking concurrent
-  // writes from the App task that would otherwise survive into a freshly-erased region.
-  pfs_format(false /* write_erase_headers */);
-
-  // "First use" is part of the PRF image for Snowy
+#if !defined(CONFIG_RECOVERY_FW)
+  // Commit to booting PRF before the filesystem wipe: it can take minutes,
+  // and a reset in that window (watchdog, crash, power loss) must land in
+  // PRF instead of rebooting a half-wiped normal firmware.
+  // "First use" is part of the PRF image for Snowy.
   boot_bit_set(BOOT_BIT_FORCE_PRF);
 #ifdef CONFIG_PBLBOOT
   // Invalidate both firmware slots so the bootloader doesn't boot into them
   firmware_storage_invalidate_firmware_slot(0);
   firmware_storage_invalidate_firmware_slot(1);
 #endif
+
+  // pfs_format() holds the PFS mutex across the erase, blocking concurrent
+  // writes from the App task that would otherwise survive into a freshly-erased region.
+  pfs_format(false /* write_erase_headers */);
 #else
   filesystem_regions_erase_all();
 #endif
@@ -92,7 +95,7 @@ void factory_reset(bool should_shutdown) {
   prv_factory_reset_post(should_shutdown);
 }
 
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
 void close_db_files() {
   // Deinit the databases and any clients
   timeline_event_deinit();
@@ -114,7 +117,7 @@ void factory_reset_fast(void *unused) {
 
   prv_factory_reset_post(false /* should_shutdown */);
 }
-#endif // !RECOVERY_FW
+#endif // !defined(CONFIG_RECOVERY_FW)
 
 //! Used by the mfg flow to kick us out the MFG firmware and into the conumer PRF that's stored
 //! on the external flash.

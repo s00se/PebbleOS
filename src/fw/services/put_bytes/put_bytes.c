@@ -8,7 +8,7 @@
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/system_message.h"
-#include "os/tick.h"
+#include "pbl/os/tick.h"
 #include "resource/resource_storage_file.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/comm_session/session_receive_router.h"
@@ -18,10 +18,10 @@
 #include "pbl/services/process_management/app_storage.h"
 #include "system/bootbits.h"
 #include "system/firmware_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
 #include <bluetooth/analytics.h>
 
@@ -30,6 +30,8 @@
 #include "task.h"
 
 #include <string.h>
+
+PBL_LOG_MODULE_DEFINE(service_put_bytes, CONFIG_SERVICE_PUT_BYTES_LOG_LEVEL);
 
 typedef enum {
   PutBytesIdle = 0x00,
@@ -296,7 +298,7 @@ static bool prv_init_put_job_queue_if_necessary(void) {
         prv_deinit_put_job_queue();
         return false;
       } if (i == 1) {
-        PBL_LOG_INFO("Not enough memory for PB pre-ack, falling back to legacy mode");
+        PBL_LOG_DBG("Not enough memory for PB pre-ack, falling back to legacy mode");
         put_jobs->enable_preack = false;
         break;
       } else {
@@ -311,7 +313,7 @@ static bool prv_init_put_job_queue_if_necessary(void) {
 
 static void prv_set_responsiveness(ResponseTimeState state, uint16_t timeout_secs) {
   comm_session_set_responsiveness(comm_session_get_system_session(),
-                                  BtConsumerPpPutBytes, ResponseTimeMin, timeout_secs);
+                                  BtConsumerPpPutBytes, state, timeout_secs);
 }
 
 static void prv_send_nack_from_system_task(void *data) {
@@ -328,7 +330,7 @@ static void prv_add_nack_no_token_system_callback(void) {
 }
 
 static void prv_cleanup(void) {
-  PBL_LOG_INFO("Put bytes cleanup. Tok: %"PRIu32, s_pb_state.token);
+  PBL_LOG_DBG("Put bytes cleanup. Tok: %"PRIu32, s_pb_state.token);
 
   prv_deinit_put_job_queue();
   s_pb_state.receiver = (__typeof__(s_pb_state.receiver)) {};
@@ -392,7 +394,7 @@ static void prv_timer_callback(void* data) {
 }
 
 static bool prv_has_valid_fw_update_state_for_object_type(PutBytesObjectType type) {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   if (!firmware_update_is_in_progress()) {
     bool is_fw_update_object = (type == ObjectFirmware ||
                                 type == ObjectRecovery ||
@@ -500,7 +502,7 @@ static void prv_do_install(uint32_t token) {
     return;
   }
 
-  PBL_LOG_INFO("PutBytes install CB. Tok: %"PRIu32", type: %d", token, o->type);
+  PBL_LOG_DBG("PutBytes install CB. Tok: %"PRIu32", type: %d", token, o->type);
 
   switch (o->type) {
   case ObjectFirmware:
@@ -524,7 +526,7 @@ static void prv_do_install(uint32_t token) {
 }
 
 static void prv_do_abort(void) {
-  PBL_LOG_INFO("PutBytes abort CB. Tok: %"PRIu32".", s_pb_state.token);
+  PBL_LOG_DBG("PutBytes abort CB. Tok: %"PRIu32".", s_pb_state.token);
   prv_mark_pb_jobs_complete(1);
   prv_cleanup_and_send_response(ResponseAck);
 }
@@ -570,7 +572,7 @@ static bool prv_has_invalid_request_length(const PutBytesCommand command, uint32
 }
 
 static bool prv_is_object_allowed(PutBytesObjectType type) {
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   switch (type) {
     case ObjectFirmware:
     case ObjectSysResources:
@@ -630,7 +632,7 @@ static bool prv_setup_storage_for_init_request(const InitRequest *request, uint3
   PutBytesStorageInfo *storage_info = NULL;
 
   switch (request->type) {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
     case ObjectFile: {
       storage_info = kernel_malloc_check(sizeof(PutBytesStorageInfo) +
                                          strlen(request->filename) + 1);
@@ -723,7 +725,7 @@ static void prv_do_init(void) {
   const uint32_t r = rand();
   s_pb_state.token = MAX(1, r);
 
-  PBL_LOG_INFO("PutBytes Init CB. Type: %d, Idx: %"PRIu32", Size: %"PRIu32" Tok: %"PRIu32,
+  PBL_LOG_DBG("PutBytes Init CB. Type: %d, Idx: %"PRIu32", Size: %"PRIu32" Tok: %"PRIu32,
           (int) s_pb_state.type, s_pb_state.index,
           s_pb_state.total_size, s_pb_state.token);
 
@@ -1028,7 +1030,7 @@ void put_bytes_cancel(void) {
   } else if (s_pb_state.type == ObjectWatchApp ||
              s_pb_state.type == ObjectAppResources ||
              s_pb_state.type == ObjectWatchWorker) {
-    PBL_LOG_INFO("Forcefully cancelling put_bytes transfer of app binaries");
+    PBL_LOG_DBG("Forcefully cancelling put_bytes transfer of app binaries");
     prv_cleanup();
   } else {
     PBL_LOG_DBG("Attempted to cancel put_bytes with a non desired type, %d",

@@ -7,14 +7,16 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/audio_endpoint.h"
 #include "pbl/services/voice/voice.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/generic_attribute.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include <sys/types.h>
 
 #include "pbl/services/voice_endpoint_private.h"
+
+PBL_LOG_MODULE_DEFINE(service_voice_endpoint, CONFIG_SERVICE_VOICE_ENDPOINT_LOG_LEVEL);
 
 #define VOICE_CONTROL_ENDPOINT (11000)
 

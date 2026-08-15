@@ -6,8 +6,8 @@
 #include "console/prompt.h"
 #include "console/pulse_internal.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
 
 extern void command_help(void);
 
@@ -24,6 +24,12 @@ extern void command_put_button_event(const char*, const char*);
 extern void command_button_press(const char*, const char*);
 extern void command_button_press_multiple(const char *, const char *, const char *, const char *);
 extern void command_button_press_short(const char*);
+#ifdef CONFIG_TOUCH
+extern void command_touch_nav_log(void);
+extern void command_touch_nav_enable(void);
+extern void command_touch_nav_disable(void);
+extern void command_notif_test(void);
+#endif
 
 extern void command_stats_dump_now(void);
 extern void command_stats_dump_current(void);
@@ -52,6 +58,11 @@ extern void command_dump_malloc_bt(void);
 extern void command_read_word(const char*);
 
 extern void command_backlight_ctl(const char*);
+extern void command_light_test(void);
+extern void command_als_lux(void);
+#if defined(CONFIG_ALS_SCREEN_COMPENSATION)
+extern void command_als_curve(void);
+#endif
 extern void command_backlight_set_color(const char*);
 
 extern void command_battery_charge_option(const char*);
@@ -85,9 +96,9 @@ extern void command_flash_sec_write(const char *, const char *);
 extern void command_flash_sec_erase(const char *);
 extern void command_flash_sec_wipe(void);
 extern void command_flash_sec_info(void);
-#if defined(RECOVERY_FW)
+#if defined(CONFIG_RECOVERY_FW)
 extern void command_flash_sec_lock(const char *, const char *);
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 #endif // CONFIG_OTP_FLASH
 
 extern void command_get_time(void);
@@ -238,7 +249,6 @@ extern void command_ble_logging_get_level(void);
 extern void command_ble_host_reset(void);
 
 extern void command_audit_delay_us(void);
-extern void command_enter_stop(void);
 
 extern void dialog_test_cmds(void);
 
@@ -285,7 +295,7 @@ extern void command_analytics_heartbeat(void);
 extern void command_console_disable_rx(const char *seconds_str);
 
 #ifdef CONFIG_SOC_SF32LB52
-extern void command_force_deepwfi(const char *arg);
+extern void command_force_wfi(const char *arg);
 #endif
 
 #if !defined(CONFIG_RELEASE) && defined(CONFIG_DISPLAY_JDI_SF32LB)
@@ -303,10 +313,18 @@ static const Command s_prompt_commands[] = {
   { "click short", command_button_press_short, 1 },
   { "click multiple", command_button_press_multiple, 4 },
   { "click long", command_button_press, 2 },
+#ifdef CONFIG_TOUCH
+  { "touch nav log", command_touch_nav_log, 0 },
+  { "touch nav enable", command_touch_nav_enable, 0 },
+  { "touch nav disable", command_touch_nav_disable, 0 },
+#ifndef CONFIG_RECOVERY_FW
+  { "notif test", command_notif_test, 0 },
+#endif  // CONFIG_RECOVERY_FW
+#endif
   { "reset", command_reset, 0 },
   { "crash", command_crash, 0 },
   { "hard crash", command_hard_crash, 0 },
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   { "factory reset fast", command_factory_reset_fast, 0 },
 #endif
   { "factory reset", command_factory_reset, 0 },
@@ -327,11 +345,8 @@ static const Command s_prompt_commands[] = {
   { "battery status", command_print_battery_status, 0 },
 #ifndef CONFIG_RELEASE
   { "audit delay", command_audit_delay_us, 0 },
-#ifndef CONFIG_SOC_SF32LB52
-  { "enter stop", command_enter_stop, 0},
 #endif
-#endif
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   { "app list", command_app_list, 0 },
   { "app launch", command_app_launch, 1 },
   { "app remove", command_app_remove, 1 },
@@ -341,9 +356,14 @@ static const Command s_prompt_commands[] = {
 
   { "erase flash", command_erase_flash, 2 },
   { "crc flash", command_crc_flash, 2 },
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   { "temp read",  command_temperature_read, 0 },
   { "als read", command_als_read, 0},
+  { "als lux", command_als_lux, 0},
+  { "light test", command_light_test, 0},
+#if defined(CONFIG_ALS_SCREEN_COMPENSATION)
+  { "als curve", command_als_curve, 0},
+#endif
 #ifndef CONFIG_RELEASE
   { "litter pfs", command_litter_filesystem, 2 },
 #endif
@@ -353,7 +373,7 @@ static const Command s_prompt_commands[] = {
   // Following commands are used for manufacturing. We use a PRF firmware for manufacturing, so
   // we can only include these commands when we're building for PRF. Some of the commands are
   // specific to snowy manufacturing as well
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   { "info", command_version_info, 0 },
 
   { "enter mfg", command_enter_mfg, 0 },
@@ -376,11 +396,11 @@ static const Command s_prompt_commands[] = {
   { "serial write", command_serial_write, 1 },
   { "hwver write", command_hwver_write, 1 },
   { "pcbaserial write", command_pcba_serial_write, 1 },
-#if MANUFACTURING_FW
+#ifdef CONFIG_MFG
   { "color write", command_color_write, 1 },
   { "rtcfreq write", command_rtcfreq_write, 1 },
   { "model write", command_model_write, 1 },
-#endif // MANUFACTURING_FW
+#endif // CONFIG_MFG
 
   { "bt status", command_bt_status, 0 },
 
@@ -408,10 +428,10 @@ static const Command s_prompt_commands[] = {
 
   //{ "pmic rails", command_pmic_rails, 0},
 
-#if MANUFACTURING_FW
+#ifdef CONFIG_MFG
   { "disp", command_display_set, 1},
 #endif
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 
 #ifdef CONFIG_HRM
   { "hrm read", command_hrm_read, 0},
@@ -478,11 +498,11 @@ static const Command s_prompt_commands[] = {
   */
   { "croak", command_croak, 0 },
 
-#ifdef MALLOC_INSTRUMENTATION
+#ifdef CONFIG_MALLOC_INSTRUMENTATION
   { "dump malloc kernel", command_dump_malloc_kernel, 0 },
   { "dump malloc app", command_dump_malloc_app, 0 },
   { "dump malloc worker", command_dump_malloc_worker, 0 },
-#endif /* MALLOC_INSTRUMENTATION */
+#endif /* CONFIG_MALLOC_INSTRUMENTATION */
 
   /*
   { "read word", command_read_word, 1 },
@@ -490,7 +510,7 @@ static const Command s_prompt_commands[] = {
   { "remote os", command_get_connected_os, 0 },
   */
 
-#ifdef UI_DEBUG
+#ifdef CONFIG_UI_DEBUG
   { "window dump", command_dump_window, 0 },
   { "layer nudge", command_layer_nudge, 1 },
 #endif
@@ -510,7 +530,7 @@ static const Command s_prompt_commands[] = {
 
   { "flash unprotect", command_flash_unprotect, 0 },
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   { "worker launch", command_worker_launch, 1 },
   { "worker kill", command_worker_kill, 0},
 #endif
@@ -534,7 +554,7 @@ static const Command s_prompt_commands[] = {
   //{ "bt active exit", command_bt_active_exit, 0 },
 
 
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
   { "get active app metadata", command_get_active_app_metadata, 0 },
 #endif
 //  { "boot bits get", command_boot_bits_get, 0 },
@@ -545,11 +565,11 @@ static const Command s_prompt_commands[] = {
 
 //  { "animations_l2", command_legacy2_animations_info, 0 },
 
-// #if !defined(RECOVERY_FW)
+// #if !defined(CONFIG_RECOVERY_FW)
 //  { "sim panic", command_sim_panic, 1 },
 // #endif
 
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
   { "alarm", command_alarm, 0 },
 
   //{ "now playing", command_print_now_playing, 0 },
@@ -559,11 +579,11 @@ static const Command s_prompt_commands[] = {
   { "dls wipe", command_dls_erase_all, 0 },
   { "dls send", command_dls_send_all, 0 },
 
-#endif // !RECOVERY_FW
+#endif // !defined(CONFIG_RECOVERY_FW)
 
   { "dump mpu", memory_layout_dump_mpu_regions_to_dbgserial, 0 },
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   {"pfs format", pfs_command_fs_format, 1},
   {"pfs ls", pfs_command_fs_ls, 0},
   // {"pfs cat", pfs_command_cat, 2},
@@ -582,7 +602,7 @@ static const Command s_prompt_commands[] = {
 
   { "runlevel", command_set_runlevel, 1 },
 
-#if defined(PROFILER)
+#if defined(CONFIG_PROFILER)
   { "profiler start", command_profiler_start, 0 },
   { "profiler stop", command_profiler_stop, 0 },
   { "profiler stats", command_profiler_stats, 0 },
@@ -593,9 +613,9 @@ static const Command s_prompt_commands[] = {
   // Removing it will save ~2400 bytes but it is super useful for BT bringup debug!
   { "gapdb dump", command_gapdb_dump, 0 },
   { "sprf nuke", command_bt_sprf_nuke, 0 },
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   { "sprf sync", command_force_shared_prf_flush, 0},
-#endif // !RECOVERY_FW
+#endif // !defined(CONFIG_RECOVERY_FW)
 #endif
 
 #if 0
@@ -605,11 +625,11 @@ static const Command s_prompt_commands[] = {
 #endif
 
   { "waste time", command_waste_time, 2 },
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
   { "dump notif_pref_db", command_dump_notif_pref_db, 0 },
 #endif
 
-#if PERFORMANCE_TESTS
+#ifdef CONFIG_PERFORMANCE_TESTS
   { "perftest all line", command_perftest_line_all, 0 },
   { "perftest all text", command_perftest_text_all, 0 },
   { "perftest line", command_perftest_line, 2 },
@@ -620,7 +640,7 @@ static const Command s_prompt_commands[] = {
   { "vibe", command_vibe_ctl, 1 },
   { "console disable rx", command_console_disable_rx, 1 },
 #ifdef CONFIG_SOC_SF32LB52
-  { "force deepwfi", command_force_deepwfi, 1 },
+  { "force wfi", command_force_wfi, 1 },
 #endif
 #if !defined(CONFIG_RELEASE) && defined(CONFIG_DISPLAY_JDI_SF32LB)
   { "display drop_complete", command_display_drop_complete, 0 },

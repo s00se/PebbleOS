@@ -7,7 +7,9 @@
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/vibes/vibe_score.h"
 #include "pbl/services/vibes/vibe_score_info.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
+
+PBL_LOG_MODULE_DEFINE(service_vibes, CONFIG_SERVICE_VIBES_LOG_LEVEL);
 
 static VibeScoreId prv_get_resource_for_client(VibeClient client) {
   if (client == VibeClient_AlarmsLPM) {

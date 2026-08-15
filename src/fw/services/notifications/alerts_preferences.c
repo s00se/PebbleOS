@@ -4,14 +4,14 @@
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "popups/notifications/notification_window.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/vibes/vibe_intensity.h"
 #include "system/passert.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "util/bitset.h"
 
 #include <string.h>
@@ -42,6 +42,9 @@ static bool s_dnd_touch_backlight = true;
 
 #define PREF_KEY_DND_MUTE_SPEAKER "dndMuteSpeaker"
 static bool s_dnd_mute_speaker = false;
+
+#define PREF_KEY_DND_AUTO_DISMISS "dndAutoDismiss"
+static bool s_dnd_auto_dismiss = false;
 
 #define PREF_KEY_SPEAKER_MUTED "speakerMuted"
 static bool s_speaker_muted = false;
@@ -342,6 +345,7 @@ void alerts_preferences_init(void) {
   RESTORE_PREF(PREF_KEY_NOTIF_VIBE_DELAY, s_notification_vibe_delay);
   RESTORE_PREF(PREF_KEY_NOTIF_BACKLIGHT, s_notification_backlight);
   RESTORE_PREF(PREF_KEY_NOTIF_STATUS_BAR_STYLE, s_notification_status_bar_style);
+  RESTORE_PREF(PREF_KEY_DND_AUTO_DISMISS, s_dnd_auto_dismiss);
 #undef RESTORE_PREF
 
   prv_migrate_legacy_dnd_schedule(&file);
@@ -355,6 +359,11 @@ void alerts_preferences_init(void) {
   prv_migrate_legacy_first_use_settings(&file);
   prv_migrate_vibe_intensity_to_vibe_scores(&file);
   prv_ensure_valid_vibe_scores();
+  // RESTORE_PREF writes straight into the globals, bypassing the setter that
+  // clamps this, so an out-of-range stored value has to be caught here.
+  if (s_speaker_volume > 100) {
+    s_speaker_volume = 100;
+  }
   prv_save_changed_vibe_scores_to_file(&file, orig_vibe_score_notifications,
                                        orig_vibe_score_incoming_calls,
                                        orig_vibe_score_alarms,
@@ -581,6 +590,15 @@ bool alerts_preferences_dnd_get_mute_speaker(void) {
   return s_dnd_mute_speaker;
 }
 
+void alerts_preferences_dnd_set_auto_dismiss(bool enable) {
+  s_dnd_auto_dismiss = enable;
+  SET_PREF(PREF_KEY_DND_AUTO_DISMISS, s_dnd_auto_dismiss);
+}
+
+bool alerts_preferences_dnd_get_auto_dismiss(void) {
+  return s_dnd_auto_dismiss;
+}
+
 bool alerts_preferences_dnd_is_manually_enabled(void) {
   return s_do_not_disturb_manually_enabled;
 }
@@ -635,6 +653,21 @@ void alerts_preferences_lock(void) {
 
 void alerts_preferences_unlock(void) {
   mutex_unlock(s_mutex);
+}
+
+//! Keys that feed do_not_disturb_is_active() or the DND schedule timer
+static bool prv_is_dnd_state_key(const char *key) {
+  if (strcmp(key, PREF_KEY_DND_MANUALLY_ENABLED) == 0 ||
+      strcmp(key, PREF_KEY_DND_SMART_ENABLED) == 0) {
+    return true;
+  }
+  for (int i = 0; i < NumDNDSchedules; i++) {
+    if (strcmp(key, s_dnd_schedule_keys[i].schedule_pref_key) == 0 ||
+        strcmp(key, s_dnd_schedule_keys[i].enabled_pref_key) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void alerts_preferences_handle_blob_db_event(PebbleBlobDBEvent *event) {
@@ -698,6 +731,7 @@ void alerts_preferences_handle_blob_db_event(PebbleBlobDBEvent *event) {
   RELOAD_IF_MATCH(PREF_KEY_DND_TOUCH_BACKLIGHT, s_dnd_touch_backlight);
   RELOAD_IF_MATCH(PREF_KEY_DND_MUTE_SPEAKER, s_dnd_mute_speaker);
   RELOAD_IF_MATCH(PREF_KEY_SPEAKER_MUTED, s_speaker_muted);
+  RELOAD_IF_MATCH(PREF_KEY_DND_AUTO_DISMISS, s_dnd_auto_dismiss);
   RELOAD_IF_MATCH(PREF_KEY_SPEAKER_VOLUME, s_speaker_volume);
 
 #undef RELOAD_IF_MATCH
@@ -706,8 +740,12 @@ done:
   settings_file_close(&file);
   mutex_unlock(s_mutex);
 
-  // Notify UI that a preference changed so it can refresh
   if (matched_key) {
+    // DND state keys are reloaded behind the DND service's back; kick it so the
+    // change re-arms the schedule timer and fires PEBBLE_DO_NOT_DISTURB_EVENT.
+    if (prv_is_dnd_state_key(matched_key)) {
+      do_not_disturb_handle_pref_synced();
+    }
     PebbleEvent pref_event = {
       .type = PEBBLE_PREF_CHANGE_EVENT,
       .pref_change = {

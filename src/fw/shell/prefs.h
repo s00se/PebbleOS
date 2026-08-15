@@ -17,10 +17,10 @@
 #include "applib/graphics/gtypes.h"
 #include "process_management/app_install_types.h"
 #include "shell/system_theme.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #if defined(CONFIG_APP_SCALING) && \
-    (defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_QEMU_EMERY))
+    (defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_QEMU_EMERY))
 #define TIMELINE_PEEK_WATCHFACE_FIT_SUPPORTED 1
 #else
 #define TIMELINE_PEEK_WATCHFACE_FIT_SUPPORTED 0
@@ -111,15 +111,52 @@ void backlight_set_touch_wake(BacklightTouchWake wake);
 bool touch_is_globally_enabled(void);
 void touch_set_globally_enabled(bool enable);
 
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
-// Dynamic backlight intensity based on ambient light sensor
-bool backlight_is_dynamic_intensity_enabled(void);
-void backlight_set_dynamic_intensity_enabled(bool enable);
+// Touch-navigation sub-pref, ANDed with the master "Touch" kill switch above
+// (touch_is_globally_enabled) for the SYSTEM experience: menus, notifications
+// and the button bridge are active only while BOTH are on; with this off
+// nothing system-side subscribes to touch. Only the wake-gesture pref, SDK
+// raw-touch apps, and third-party apps that explicitly opted in via
+// app_touch_navigation_enable() (they follow the master switch alone) still
+// consume the sensor. Defaults to on, gated by the interaction session
+// (touch_session_is_active). Toggling either pref runs the enable/disable
+// transaction when the effective (ANDed) state changes and re-evaluates the
+// running app's twin otherwise.
+bool touch_navigation_menu_is_enabled(void);
+void touch_set_navigation_menu_enabled(bool enable);
 
-// Dynamic backlight thresholds (for debug menu)
-uint32_t backlight_get_dynamic_min_threshold(void);
-void backlight_set_dynamic_min_threshold(uint32_t threshold);
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
+// Dynamic backlight: how aggressively brightness ramps with ambient light.
+// Every mode keeps the same dim floor; the mode selects the lux level at
+// which the ramp reaches the user's max intensity (Bright = earliest).
+typedef enum BacklightDynamicMode {
+  BacklightDynamicMode_Off = 0,
+  BacklightDynamicMode_Bright = 1,
+  BacklightDynamicMode_Standard = 2,
+  BacklightDynamicMode_Dim = 3,
+  BacklightDynamicModeCount,
+} BacklightDynamicMode;
+
+BacklightDynamicMode backlight_get_dynamic_mode(void);
+void backlight_set_dynamic_mode(BacklightDynamicMode mode);
+// Convenience: mode != Off
+bool backlight_is_dynamic_intensity_enabled(void);
 #endif
+
+// Backlight presets bundle the ambient sensor, dynamic mode (where dynamic
+// backlight is available) and intensity settings into one user-facing mode;
+// Advanced exposes the settings individually. A stored preset only reports
+// as active while the underlying settings still match its values, otherwise
+// Advanced is reported.
+typedef enum BacklightPreset {
+  BacklightPreset_MaxBrightness = 0,
+  BacklightPreset_Standard = 1,
+  BacklightPreset_BatterySaver = 2,
+  BacklightPreset_Advanced = 3,
+  BacklightPresetCount,
+} BacklightPreset;
+
+BacklightPreset backlight_get_preset(void);
+void backlight_set_preset(BacklightPreset preset);
 
 // Motion sensitivity for accelerometer shake detection (0-100, lower = less sensitive)
 // Only available on platforms with LSM6DSO (Asterix, Obelix)
@@ -153,6 +190,7 @@ typedef enum ShellLanguage {
   ShellLanguageItalian,
   ShellLanguageDutch,
   ShellLanguagePortuguese,
+  ShellLanguagePolish,
   ShellLanguageCount,
 } ShellLanguage;
 
@@ -177,15 +215,6 @@ typedef enum TimelinePeekUnsupportedFaceMode {
 void timeline_peek_prefs_set_unsupported_face_mode(TimelinePeekUnsupportedFaceMode mode);
 TimelinePeekUnsupportedFaceMode timeline_peek_prefs_get_unsupported_face_mode(void);
 #endif
-
-typedef enum PowerMode {
-  PowerMode_HighPerformance = 0,
-  PowerMode_LowPower = 1,
-  PowerModeCount
-} PowerMode;
-
-PowerMode shell_prefs_get_power_mode(void);
-void shell_prefs_set_power_mode(PowerMode mode);
 
 bool shell_prefs_can_coredump_on_request(void);
 void shell_prefs_set_coredump_on_request(bool enabled);

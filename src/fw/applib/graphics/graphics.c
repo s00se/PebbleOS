@@ -16,12 +16,12 @@
 #include "process_management/process_manager.h"
 #include "process_state/app_state/app_state.h"
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "util/bitset.h"
 #include "util/graphics.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/reverse.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 
 #include <stdio.h>
 #include <string.h>

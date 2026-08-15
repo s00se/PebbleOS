@@ -9,9 +9,9 @@
 #include "kernel/kernel_applib_state.h"
 #include "kernel/pbl_malloc.h"
 #include "system/passert.h"
-#include "system/logging.h"
-#include "util/math.h"
-#include "util/order.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
+#include "pbl/util/order.h"
 
 #include <string.h>
 

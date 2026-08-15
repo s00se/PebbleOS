@@ -5,20 +5,22 @@
 
 #include "console/prompt.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/activity/activity_private.h"
 #include "pbl/services/activity/hr_util.h"
 #include "pbl/services/blob_db/api.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/units.h"
 
 #include <stdio.h>
 #include <string.h>
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 #define HEALTH_DB_DEBUG 0
 #define HEALTH_DB_MAX_KEY_LEN 30
@@ -151,7 +153,7 @@ static void prv_notify_health_listeners(const char *key,
     if (!prv_is_last_processed_timestamp_valid(data->last_processed_timestamp)) {
       return;
     }
-    PBL_LOG_INFO("Got MovementData for wday: %d, cur_wday: %d, steps: %"PRIu32"",
+    PBL_LOG_DBG("Got MovementData for wday: %d, cur_wday: %d, steps: %"PRIu32"",
             wday, cur_wday, data->steps);
     activity_metrics_prv_set_metric(ActivityMetricStepCount, wday, data->steps);
     activity_metrics_prv_set_metric(ActivityMetricActiveSeconds, wday, data->active_seconds);
@@ -163,7 +165,7 @@ static void prv_notify_health_listeners(const char *key,
     if (!prv_is_last_processed_timestamp_valid(data->last_processed_timestamp)) {
       return;
     }
-    PBL_LOG_INFO("Got SleepData for wday: %d, cur_wday: %d, sleep: %"PRIu32"",
+    PBL_LOG_DBG("Got SleepData for wday: %d, cur_wday: %d, sleep: %"PRIu32"",
             wday, cur_wday, data->sleep_duration);
     activity_metrics_prv_set_metric(ActivityMetricSleepTotalSeconds, wday, data->sleep_duration);
     activity_metrics_prv_set_metric(ActivityMetricSleepRestfulSeconds, wday,
@@ -179,7 +181,7 @@ static void prv_notify_health_listeners(const char *key,
     if (data->num_zones != HRZone_Max) {
       return;
     }
-    PBL_LOG_INFO("Got HeartRateZoneData for wday: %d, cur_wday: %d, zone1: %"PRIu32"",
+    PBL_LOG_DBG("Got HeartRateZoneData for wday: %d, cur_wday: %d, zone1: %"PRIu32"",
             wday, cur_wday, data->minutes_in_zone[0]);
     activity_metrics_prv_set_metric(ActivityMetricHeartRateZone1Minutes, wday,
                                     data->minutes_in_zone[0]);

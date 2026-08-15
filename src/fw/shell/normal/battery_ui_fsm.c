@@ -18,7 +18,7 @@
 #include "pbl/services/vibes/vibe_intensity.h"
 #include "shell/normal/watchface.h"
 #include "util/ratio.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 // The Battery UI state machine keeps track of when to notify the user of a
 // change in battery charge state, and when to automatically dismiss the status
@@ -56,12 +56,7 @@ static void prv_display_plugged(void *data);
 static void prv_dismiss_plugged(void);
 static void prv_display_fully_charged(void *data);
 static void prv_dismiss_fully_charged(void);
-// TODO PBL-39883: Replace w/ QUIRK_RESET_ON_SHUTDOWN_WHILE_CHARGING once arbitrary prefixes land
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
 static void prv_shutdown(void *ignored);
-#else
-static void prv_enter_shutdown_charging(void *ignored);
-#endif
 
 static const BatteryUIState ui_states[] = {
   [BatteryGood] = { .next_state = {
@@ -84,19 +79,23 @@ static const BatteryUIState ui_states[] = {
     .next_state = {
       BatteryGood, BatteryWarning, BatteryLowPower, BatteryCritical, BatteryShutdownCharging
   }},
-// TODO PBL-39883: Replace w/ QUIRK_RESET_ON_SHUTDOWN_WHILE_CHARGING once arbitrary prefixes land
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
   [BatteryShutdownCharging] = { .enter = prv_shutdown }
-#else
-  [BatteryShutdownCharging] = { .enter = prv_enter_shutdown_charging }
-#endif
 };
 
 static BatteryUIStateID s_state = BatteryGood;
 static BatteryUIWarningLevel s_warning_points_index = -1;
 
-/* first warning is at 18 hours remaining, second at 12 hours remaining */
+/* Default warnings are at 18 and 12 hours remaining. */
 static const uint8_t s_warning_points[] = { 18, 12 };
+static const uint8_t s_warning_percentages[] = {
+  CONFIG_BATTERY_WARNING_FIRST_PERCENT,
+  CONFIG_BATTERY_WARNING_SECOND_PERCENT,
+};
+
+static uint8_t prv_get_warning_percent(BatteryUIWarningLevel level) {
+  const uint8_t configured = s_warning_percentages[level];
+  return configured ? configured : battery_curve_get_percent_remaining(s_warning_points[level]);
+}
 
 // Minimum hours of headroom above the next warning threshold required to show
 // the current warning. If battery crosses a warning point already close to the
@@ -112,15 +111,16 @@ static void prv_display_warning(void *data) {
   bool new_warning = false;
   const BatteryUIWarningLevel num_points = ARRAY_LENGTH(s_warning_points) - 1;
 
-  while (s_warning_points_index < num_points && (percent <=
-         battery_curve_get_percent_remaining(s_warning_points[s_warning_points_index + 1]))) {
+  while (s_warning_points_index < num_points &&
+         percent <= prv_get_warning_percent(s_warning_points_index + 1)) {
     s_warning_points_index++;
     new_warning = true;
   }
 
   if (new_warning && s_warning_points_index < num_points) {
     const uint32_t hours_remaining = battery_curve_get_hours_remaining(percent);
-    const uint32_t next_point_hours = s_warning_points[s_warning_points_index + 1];
+    const uint32_t next_point_hours =
+        battery_curve_get_hours_remaining(prv_get_warning_percent(s_warning_points_index + 1));
     if (hours_remaining < next_point_hours + BATTERY_WARNING_MIN_HOURS_HEADROOM) {
       new_warning = false;
     }
@@ -140,7 +140,7 @@ static void prv_dismiss_warning(void) {
 }
 
 static void prv_enter_low_power(void *ignored) {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   watchface_start_low_power();
   modal_manager_pop_all_below_priority(ModalPriorityAlarm);
   modal_manager_set_min_priority(ModalPriorityAlarm);
@@ -154,7 +154,7 @@ static void prv_enter_low_power(void *ignored) {
 }
 
 static void prv_exit_low_power(void) {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   modal_manager_set_min_priority(ModalPriorityMin);
   watchface_launch_default(NULL);
   vibe_intensity_set(vibe_intensity_get());
@@ -199,18 +199,9 @@ static void prv_dismiss_fully_charged(void) {
   battery_ui_dismiss_modal();
 }
 
-// TODO PBL-39883: Replace w/ QUIRK_RESET_ON_SHUTDOWN_WHILE_CHARGING once arbitrary prefixes land
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
 static void prv_shutdown(void *ignored) {
   battery_ui_handle_shut_down();
 }
-#else
-static void prv_enter_shutdown_charging(void *ignored) {
-  app_manager_put_launch_app_event(&(AppLaunchEventConfig) {
-    .id = APP_ID_SHUTDOWN_CHARGING,
-  });
-}
-#endif
 
 // Internals
 
@@ -254,8 +245,7 @@ static BatteryUIStateID prv_get_state(PreciseBatteryChargeState *state) {
     return BatteryCritical;
   } else if (low_power_is_active()) {
     return BatteryLowPower;
-  } else if (ratio32_to_percent(state->charge_percent) <=
-             battery_curve_get_percent_remaining(s_warning_points[0])) {
+  } else if (ratio32_to_percent(state->charge_percent) <= prv_get_warning_percent(0)) {
     return BatteryWarning;
   } else {
     return BatteryGood;

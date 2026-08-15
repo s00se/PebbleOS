@@ -2,8 +2,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "console/prompt.h"
-#include "drivers/mcu.h"
-#include "drivers/pmic.h"
+#include <pbl/drivers/mcu.h>
+#include <pbl/drivers/pmic.h>
 #include "mfg/mfg_info.h"
 #include "mfg/mfg_serials.h"
 #include "resource/resource.h"
@@ -17,12 +17,12 @@
 #include "pbl/services/activity/insights_settings.h"
 #include "shell/system_app_ids.auto.h"
 #include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/version.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/net.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 
 #include <bluetooth/bluetooth_types.h>
 
@@ -68,7 +68,7 @@ static void prv_fixup_firmware_metadata(FirmwareMetadata *fw_metadata) {
 static void prv_fixup_running_firmware_metadata(FirmwareMetadata *fw_metadata) {
   prv_fixup_firmware_metadata(fw_metadata);
 
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
   // Lie to the phone and force this to say we're not a MFG firmware. If we tell the phone app
   // that we're a MFG firmware it will get mad at us and try to update us out of this mode. We
   // want to stay in this mode to collect logs and core dumps at the factory.
@@ -140,13 +140,14 @@ static void prv_send_watch_versions(CommSession *session) {
   versions_msg.capabilities.smooth_fw_install_progress_support = 1;
   versions_msg.capabilities.custom_vibe_pattern_support = 1;
   versions_msg.capabilities.blob_db_version_support = 1;
+  versions_msg.capabilities.weather_db_v4_support = 1;
   bt_local_id_copy_address(&versions_msg.device_address);
 
   versions_msg.system_resources_version = resource_get_system_version();
   resource_version_to_network_endian(&versions_msg.system_resources_version);
 
   versions_msg.is_unfaithful = bt_persistent_storage_is_unfaithful();
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   versions_msg.activity_insights_version = hton16(activity_insights_settings_get_version());
 #endif
 
@@ -167,7 +168,7 @@ void system_version_protocol_msg_callback(CommSession *session, const uint8_t* d
 }
 
 void command_version_info(void) {
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
   prompt_send_response("MANUFACTURING FW");
 #endif
 

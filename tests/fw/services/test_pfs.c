@@ -4,14 +4,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "flash_region/flash_region.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/filesystem/flash_translation.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 
 #include "clar.h"
 
@@ -650,6 +650,13 @@ void test_pfs__get_size(void) {
 }
 
 void test_pfs__migration(void) {
+  // The filesystem migration path grows the filesystem by adding flash regions one at a time.
+  // This only happens on legacy multi-region (non-contiguous) flash layouts (Pebble OG / Steel,
+  // PLATFORM_TINTIN / n25q), which expose FLASH_REGION_FILESYSTEM_2_BEGIN. Modern platforms (e.g.
+  // obelix) have a single contiguous filesystem region, so there is no second region to migrate
+  // into and ftl_populate_region_list() is a no-op. Guard the migration-specific assertions so
+  // this case only exercises behaviour that exists on the platform under test.
+#ifdef FLASH_REGION_FILESYSTEM_2_BEGIN
   // reset the flash
   fake_spi_flash_cleanup();
   fake_spi_flash_init(0, 0x1000000);
@@ -698,6 +705,7 @@ void test_pfs__migration(void) {
     cl_assert(fd >= 0);
     cl_assert(pfs_close(fd) == S_SUCCESS);
   }
+#endif // FLASH_REGION_FILESYSTEM_2_BEGIN
 }
 
 static uint32_t s_watch_file_callback_called_count = 0;
@@ -985,4 +993,73 @@ void test_pfs__doesnt_give_out_fd_zero(void) {
     int fd = pfs_open(filename, OP_FLAG_WRITE, FILE_TYPE_STATIC, 10);
     cl_assert(fd > 0);
   }
+}
+
+// PageHeader field offsets/masks, mirroring the layout in pfs.c, so the tests
+// can corrupt and inspect raw page headers.
+#define PAGE_HDR_FLAGS_OFFSET   3
+#define PAGE_HDR_CRC_OFFSET     24
+#define PAGE_HDR_FLAG_DELETED   (1 << 1)
+
+static void prv_corrupt_page_hdr_crc(uint16_t page) {
+  const uint32_t bad_crc = 0;
+  ftl_write((uint8_t *)&bad_crc, sizeof(bad_crc),
+            ((uint32_t)page * PFS_SECTOR_SIZE) + PAGE_HDR_CRC_OFFSET);
+}
+
+// A failed header check on a cached fd must fall back to the flash scan
+// instead of failing the open with the raw header status (E_ERROR).
+void test_pfs__corrupt_cached_header_falls_back_to_scan(void) {
+  int fd = pfs_open(TEST_FILE_A_NAME, OP_FLAG_READ, 0, 0);
+  cl_assert(fd >= 0);
+  uint16_t start_page = test_get_file_start_page(fd);
+  pfs_close(fd);
+
+  prv_corrupt_page_hdr_crc(start_page);
+
+  // The cached-header check fails, the scan finds no valid copy, and the
+  // read-only open reports the file as missing.
+  fd = pfs_open(TEST_FILE_A_NAME, OP_FLAG_READ, 0, 0);
+  cl_assert_equal_i(fd, E_DOES_NOT_EXIST);
+}
+
+// A corrupt page which still matches a file name must get unlinked once a
+// scan finds a valid copy of the file, instead of shadowing scans forever.
+void test_pfs__stale_corrupt_duplicate_is_unlinked(void) {
+  const char *name = "dupfile";
+  char v1[] = "version 1";
+  int fd = pfs_open(name, OP_FLAG_WRITE, FILE_TYPE_STATIC, sizeof(v1));
+  cl_assert(fd >= 0);
+  cl_assert_equal_i(pfs_write(fd, (uint8_t *)v1, sizeof(v1)), sizeof(v1));
+  uint16_t old_page = test_get_file_start_page(fd);
+  pfs_close(fd);
+
+  prv_corrupt_page_hdr_crc(old_page);
+
+  // Re-opening for write falls back to the scan, finds no valid copy and
+  // recreates the file elsewhere.
+  char v2[] = "version 2";
+  fd = pfs_open(name, OP_FLAG_WRITE, FILE_TYPE_STATIC, sizeof(v2));
+  cl_assert(fd >= 0);
+  uint16_t new_page = test_get_file_start_page(fd);
+  cl_assert(new_page != old_page);
+  cl_assert_equal_i(pfs_write(fd, (uint8_t *)v2, sizeof(v2)), sizeof(v2));
+  pfs_close(fd);
+
+  // Simulate a reboot so the next open scans flash: it skips the corrupt
+  // page, finds the valid copy and unlinks the stale one.
+  pfs_reset_all_state();
+  pfs_init(false);
+
+  char rbuf[sizeof(v2)];
+  fd = pfs_open(name, OP_FLAG_READ, 0, 0);
+  cl_assert(fd >= 0);
+  cl_assert_equal_i(pfs_read(fd, (uint8_t *)rbuf, sizeof(rbuf)), sizeof(rbuf));
+  cl_assert(memcmp(rbuf, v2, sizeof(v2)) == 0);
+  pfs_close(fd);
+
+  uint8_t page_flags;
+  ftl_read(&page_flags, sizeof(page_flags),
+           ((uint32_t)old_page * PFS_SECTOR_SIZE) + PAGE_HDR_FLAGS_OFFSET);
+  cl_assert((~page_flags & PAGE_HDR_FLAG_DELETED) != 0);
 }

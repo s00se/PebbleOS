@@ -4,8 +4,8 @@
 #include "flash_logging.h"
 
 #include "console/dbgserial.h"
-#include "drivers/flash.h"
-#include "os/mutex.h"
+#include <pbl/drivers/flash.h>
+#include "pbl/os/mutex.h"
 #include "system/passert.h"
 #include "util/shared_circular_buffer.h"
 

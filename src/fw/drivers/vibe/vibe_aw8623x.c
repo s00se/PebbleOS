@@ -3,12 +3,14 @@
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/vibe.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/vibe.h>
 #include "kernel/util/sleep.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
+
+PBL_LOG_MODULE_DEFINE(driver_vibe_aw8623x, CONFIG_DRIVER_VIBE_LOG_LEVEL);
 
 #define AW8623X_PLAYCFG3 0x08U
 #define AW8623X_PLAYCFG3_BRK_EN (1U << 2U)
@@ -80,7 +82,7 @@ void vibe_init(void) {
   bool ret;
   uint8_t val;
 
-  gpio_output_init(&BOARD_CONFIG_VIBE.ctl, GPIO_OType_PP, GPIO_Speed_2MHz);
+  gpio_output_init(&BOARD_CONFIG_VIBE.ctl, GPIO_OType_PP);
 
   gpio_output_set(&BOARD_CONFIG_VIBE.ctl, true);
   psleep(AW8623X_PWR_OFF_TIME_MS);
@@ -132,8 +134,8 @@ void vibe_set_strength(int8_t strength) {
 
   scale = ((uint16_t)strength * AW8623X_CONTCFG7_DRV2_LVL_MAX) / 100U;
 
-  ret &= prv_write_register(AW8623X_CONTCFG6, scale | AW8623X_CONTCFG6_TRACK_EN);
-  ret = prv_write_register(AW8623X_CONTCFG7, scale);
+  ret = prv_write_register(AW8623X_CONTCFG6, scale | AW8623X_CONTCFG6_TRACK_EN);
+  ret &= prv_write_register(AW8623X_CONTCFG7, scale);
   PBL_ASSERTN(ret);
 }
 

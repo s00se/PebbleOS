@@ -6,7 +6,7 @@
 #include "pbl/services/system_task.h"
 #include "fake_pebble_tasks.h"
 
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 #include "clar_asserts.h"
 
@@ -40,6 +40,12 @@ bool system_task_add_callback(SystemTaskEventCallback cb, void *data) {
 
 bool system_task_add_callback_from_isr(SystemTaskEventCallback cb, void *data,
                                        bool *should_context_switch) {
+  *should_context_switch = false;
+  return system_task_add_callback(cb, data);
+}
+
+bool system_task_add_callback_from_isr_droppable(SystemTaskEventCallback cb, void *data,
+                                                 bool *should_context_switch) {
   *should_context_switch = false;
   return system_task_add_callback(cb, data);
 }

@@ -4,8 +4,8 @@
 #pragma once
 
 #include "applib/graphics/gtypes.h"
-#include "drivers/display/display.h"
-#include "util/attributes.h"
+#include <pbl/drivers/display/display.h>
+#include "pbl/util/attributes.h"
 
 #include <stdint.h>
 #include <stdbool.h>

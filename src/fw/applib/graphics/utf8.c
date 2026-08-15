@@ -1,12 +1,12 @@
 #include "utf8.h"
 
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "util/iterator.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/iterator.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 #include <inttypes.h>
 #include <stdbool.h>

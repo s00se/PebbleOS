@@ -8,7 +8,7 @@
 #include "applib/ui/dialogs/dialog_private.h"
 #include "applib/ui/dialogs/simple_dialog.h"
 #include "comm/bt_lock.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/battery.h>
 #include "kernel/event_loop.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "resource/resource_ids.auto.h"
@@ -19,11 +19,13 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/runlevel.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <stdlib.h>
+
+PBL_LOG_MODULE_DEFINE(service_stationary, CONFIG_SERVICE_STATIONARY_LOG_LEVEL);
 
 #define STATIONARY_PEEKING_TIME_MINS 5
 #define STATIONARY_WAIT_BEFORE_ENGAGING_TIME_MINS 30

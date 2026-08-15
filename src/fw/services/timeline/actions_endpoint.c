@@ -11,9 +11,11 @@
 #include "pbl/services/notifications/notifications.h"
 #include "pbl/services/timeline/timeline_actions.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
+
+PBL_LOG_MODULE_DECLARE(service_timeline, CONFIG_SERVICE_TIMELINE_LOG_LEVEL);
 
 typedef enum {
   CommandInvokeAction = 0x02,

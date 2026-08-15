@@ -8,8 +8,8 @@
 #include "applib/ui/window.h"
 #include "applib/ui/window_stack.h"
 
-#include "system/logging.h"
-#include "os/mutex.h"
+#include <pbl/logging/logging.h>
+#include "pbl/os/mutex.h"
 #include "system/profiler.h"
 
 static Window *window;

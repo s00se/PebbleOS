@@ -12,7 +12,7 @@
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/option_menu_window.h"
 #include "applib/ui/ui.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/battery.h>
 #include "kernel/pbl_malloc.h"
 #include "popups/notifications/notification_window.h"
 #include "pbl/services/analytics/analytics.h"
@@ -22,9 +22,9 @@
 #include "pbl/services/vibes/vibe_intensity.h"
 #include "shell/prefs.h"
 #include "shell/system_theme.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 #include "util/time/time.h"
 
 #include <stdio.h>
@@ -110,7 +110,7 @@ static void prv_filter_menu_push(SettingsNotificationsData *data) {
 
 static const char *s_text_size_names[] = {
   [SettingsContentSize_Small]   = i18n_noop("Smaller"),
-  [SettingsContentSize_Default] = i18n_noop("Default"),
+  [SettingsContentSize_Default] = i18n_ctx_noop("TextSize", "Default"),
   [SettingsContentSize_Large]   = i18n_noop("Larger"),
 };
 
@@ -266,7 +266,7 @@ static void prv_vibe_delay_menu_push(SettingsNotificationsData *data) {
 ////////////////////////
 
 static const char *s_status_bar_style_labels[] = {
-  [NotificationStatusBarStyle_Default]   = i18n_noop("Default"),
+  [NotificationStatusBarStyle_Default]   = i18n_ctx_noop("StatusBar", "Default"),
   [NotificationStatusBarStyle_Bold]      = i18n_noop("Bold"),
   [NotificationStatusBarStyle_LargeBold] = i18n_noop("Big & Bold"),
 };

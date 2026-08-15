@@ -23,10 +23,10 @@
 #include "stubs_syscall_internal.h"
 #include "stubs_worker_manager.h"
 
-#include "drivers/accel.h"
+#include <pbl/drivers/accel.h>
 #include "pbl/services/event_service.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 
 #include <stdio.h>
 
@@ -43,6 +43,12 @@ void sys_vibe_history_start_collecting(void) {}
 void sys_vibe_history_stop_collecting(void) {}
 int32_t sys_vibe_get_vibe_strength(void) {
   return 0;
+}
+int32_t vibes_get_vibe_strength(void) {
+  return 0;
+}
+uint32_t vibes_get_time_since_last_vibe_ms(void) {
+  return UINT32_MAX;
 }
 void accel_set_shake_sensitivity_high(bool sensitivity_high) {}
 void accel_set_shake_sensitivity_percent(uint8_t percent) {}
@@ -73,6 +79,10 @@ uint32_t accel_get_sampling_interval(void) {
 
 void accel_set_num_samples(uint32_t num_samples) {
   s_num_samples = num_samples;
+}
+
+uint32_t accel_get_max_num_samples(void) {
+  return 32;
 }
 int accel_peek(AccelDriverSample *data) {
   return 0;

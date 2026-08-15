@@ -3,19 +3,21 @@
 
 #include "pbl/services/system_task.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel/pebble_tasks.h"
 #include "kernel/util/task_init.h"
-#include "mcu/fpu.h"
-#include "os/tick.h"
+#include "pbl/mcu/fpu.h"
+#include "pbl/os/tick.h"
 #include "pbl/services/regular_timer.h"
 #include "system/passert.h"
 
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
+
+PBL_LOG_MODULE_DEFINE(service_system_task, CONFIG_SERVICE_SYSTEM_TASK_LOG_LEVEL);
 
 #define SYSTEM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 
@@ -136,26 +138,42 @@ static void handle_system_task_send_failure(SystemTaskEventCallback cb, uintptr_
   reset_due_to_software_failure();
 }
 
+static bool prv_send_to_queue_from_isr(SystemTaskEventCallback cb, void *data,
+                                       bool *should_context_switch) {
+  SystemTaskEvent event = {
+    .cb = cb,
+    .data = data,
+  };
+
+  signed portBASE_TYPE tmp = pdFALSE;
+  bool success = (xQueueSendToBackFromISR(s_system_task_queue, &event, &tmp) == pdTRUE);
+  *should_context_switch = (tmp == pdTRUE);
+
+  return success;
+}
+
 bool system_task_add_callback_from_isr(SystemTaskEventCallback cb, void *data, bool* should_context_switch) {
   // Capture caller LR at entry; reading from a deeper helper is unreliable.
   uintptr_t caller_lr = (uintptr_t)__builtin_return_address(0);
   if (!prv_is_accepting_callbacks()) {
     return false;
   }
-  SystemTaskEvent event = {
-    .cb = cb,
-    .data = data,
-  };
 
-  signed portBASE_TYPE tmp;
-  bool success = (xQueueSendToBackFromISR(s_system_task_queue, &event, &tmp) == pdTRUE);
+  bool success = prv_send_to_queue_from_isr(cb, data, should_context_switch);
   if (!success) {
     handle_system_task_send_failure(cb, caller_lr);
   }
 
-  *should_context_switch = (tmp == pdTRUE);
-
   return success;
+}
+
+bool system_task_add_callback_from_isr_droppable(SystemTaskEventCallback cb, void *data,
+                                                 bool *should_context_switch) {
+  if (!prv_is_accepting_callbacks()) {
+    return false;
+  }
+
+  return prv_send_to_queue_from_isr(cb, data, should_context_switch);
 }
 
 bool system_task_add_callback(SystemTaskEventCallback cb, void *data) {

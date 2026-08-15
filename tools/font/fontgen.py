@@ -13,7 +13,7 @@ import json
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
-# Font v3 -- https://pebbletechnology.atlassian.net/wiki/display/DEV/Pebble+Resource+Pack+Format
+# Font v3 -- see docs/reference/formats/font.md for the rendered spec
 #   FontInfo
 #       (uint8_t)  version                           - v1
 #       (uint8_t)  max_height                        - v1
@@ -44,27 +44,26 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 #       from the start of offset_tables, and offset_table_size gives the number of glyph_tables in
 #       the list (i.e., the number of codepoints that hash to the same value).
 #
-#   (uint32_t) offset_tables[][]
+#   offset_tables[][]
 #       this list of tables contains offsets into the glyph_table for the codepoint.
-#       each offset is counted in 32-bit blocks from the start of glyph_table.
+#       each offset is counted in bytes from the start of glyph_table (v1 files
+#       counted 32-bit blocks instead).
 #       packed:     (codepoint_bytes [uint16_t | uint32_t]) codepoint
 #                   (features[0] [uint16_t | uint32_t]) offset
 #
-#   (uint32_t) glyph_table[]
-#       [0]: the 32-bit block for offset 0 is used to indicate that a glyph is not supported
-#       then for each glyph:
-#       [offset + 0]  packed:   (int_8) offset_top
-#                               (int_8) offset_left,
-#                              (uint_8) bitmap_height,       NB: in v3, if RLE4 compressed, this
-#                                                                field is contains the number of
+#   glyph_table[]
+#       starts with one zeroed 32-bit block: offset 0 indicates that a glyph is
+#       not supported. then for each glyph, a packed 5-byte header:
+#                              (uint_8) bitmap_width
+#                              (uint_8) bitmap_height        NB: in v3, if RLE4 compressed, this
+#                                                                field contains the number of
 #                                                                RLE4 units.
-#                              (uint_8) bitmap_width (LSB)
-#
-#       [offset + 1]           (int_8) horizontal_advance
-#                              (24 bits) zero padding
-#       [offset + 2] bitmap data (unaligned rows of bits), padded with 0's at
-#       the end to make the bitmap data as a whole use multiples of 32-bit
-#       blocks
+#                               (int_8) offset_left
+#                               (int_8) offset_top
+#                               (int_8) horizontal_advance
+#       followed immediately by the bitmap data (unaligned rows of bits), padded
+#       with 0's at the end to make the bitmap data a multiple of 4 bytes
+#       (v1 files used a different, 8-byte glyph header)
 
 MIN_CODEPOINT = 0x20
 MAX_2_BYTES_CODEPOINT = 0xFFFF
@@ -106,10 +105,15 @@ def bits(x):
 
 
 class Font:
-    def __init__(self, ttf_path, height, max_glyphs, max_glyph_size, legacy):
+    def __init__(
+        self, ttf_path, height, max_glyphs, max_glyph_size, legacy, baseline=None
+    ):
         self.version = FONT_VERSION_3
         self.ttf_path = ttf_path
         self.max_height = int(height)
+        # Baseline row; defaults to max_height. Extended fonts pass the base
+        # font's baseline so both align on a mixed line.
+        self.baseline = int(baseline) if baseline is not None else self.max_height
         self.legacy = legacy
         self.face = freetype.Face(self.ttf_path)
         self.face.set_pixel_sizes(0, self.max_height)
@@ -321,7 +325,7 @@ class Font:
         width = bitmap.width
         height = bitmap.rows
         left = self.face.glyph.bitmap_left
-        bottom = self.max_height - self.face.glyph.bitmap_top
+        bottom = self.baseline - self.face.glyph.bitmap_top
         pixel_mode = self.face.glyph.bitmap.pixel_mode
 
         glyph_packed = []

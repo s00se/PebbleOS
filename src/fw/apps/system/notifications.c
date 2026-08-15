@@ -32,8 +32,8 @@
 #include "shell/system_theme.h"
 #include "system/passert.h"
 #include "util/date.h"
-#include "util/list.h"
-#include "util/string.h"
+#include "pbl/util/list.h"
+#include "pbl/util/string.h"
 
 typedef struct LoadedNotificationNode {
   ListNode node;
@@ -514,6 +514,10 @@ static int16_t prv_get_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell
   if (is_selected) {
     return MENU_CELL_ROUND_FOCUSED_TALL_CELL_HEIGHT;
   }
+#if PBL_DISPLAY_HEIGHT >= 200
+  // Larger round displays fit two unfocused rows on each side of the focused row
+  return ((DISP_ROWS - STATUS_BAR_LAYER_HEIGHT * 2) - MENU_CELL_ROUND_FOCUSED_TALL_CELL_HEIGHT) / 4;
+#endif
 #endif
   const PreferredContentSize runtime_platform_content_size =
       system_theme_get_default_content_size_for_runtime_platform();
@@ -803,6 +807,30 @@ static void prv_s_main(void) {
   prv_handle_deinit();
 }
 
+// Launch the existing clear-history confirmation flow without opening the list UI.
+static void prv_clear_history_handle_init(void) {
+  // Reuse the existing dialog callbacks, which expect NotificationsData storage.
+  NotificationsData *data = app_zalloc_check(sizeof(NotificationsData));
+
+  app_state_set_user_data(data);
+  prv_settings_clear_history_window_push(data);
+}
+
+static void prv_clear_history_handle_deinit(void) {
+  NotificationsData *data = app_state_get_user_data();
+
+  i18n_free_all(data);
+  app_free(data);
+}
+
+static void prv_clear_history_main(void) {
+  prv_clear_history_handle_init();
+
+  app_event_loop();
+
+  prv_clear_history_handle_deinit();
+}
+
 
 const PebbleProcessMd* notifications_app_get_info() {
   static const PebbleProcessMdSystem s_app_md = {
@@ -816,4 +844,16 @@ const PebbleProcessMd* notifications_app_get_info() {
     .icon_resource_id = RESOURCE_ID_NOTIFICATIONS_APP_GLANCE,
   };
   return (const PebbleProcessMd*) &s_app_md;
+}
+
+const PebbleProcessMd *notifications_clear_history_app_get_info(void) {
+  static const PebbleProcessMdSystem s_app_md = {
+    .common = {
+      .main_func = prv_clear_history_main,
+      .uuid = NOTIFICATIONS_CLEAR_HISTORY_UUID,
+      .visibility = ProcessVisibilityQuickLaunch,
+    },
+    .name = i18n_noop("Clear Notification History"),
+  };
+  return (const PebbleProcessMd *) &s_app_md;
 }

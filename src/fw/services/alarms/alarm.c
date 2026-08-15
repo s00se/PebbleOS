@@ -5,10 +5,10 @@
 #include "pbl/services/alarms/alarm_pin.h"
 
 #include "apps/system_app_ids.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "process_management/app_install_manager.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/clock.h"
@@ -19,16 +19,18 @@
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/timeline/event.h"
 #include "pbl/services/timeline/timeline.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/list.h"
-#include "util/string.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/list.h"
+#include "pbl/util/string.h"
 #include "util/units.h"
 
 #include <pebbleos/cron.h>
 
 #include <string.h>
+
+PBL_LOG_MODULE_DEFINE(service_alarms, CONFIG_SERVICE_ALARMS_LOG_LEVEL);
 
 #define DEFAULT_SNOOZE_DELAY_M (10)
 #define MAX_CONFIGURED_ALARMS (10)
@@ -122,6 +124,10 @@ static bool s_most_recent_alarm_recorded;
 
 static TimerID s_snooze_timer_id = TIMER_INVALID_ID;
 static uint16_t s_snooze_delay_m = DEFAULT_SNOOZE_DELAY_M;
+
+//! Whether the pending snooze timer was armed by an explicit user snooze rather
+//! than the smart alarm's internal sleep poll.
+static bool s_user_snoozed;
 
 //! Number of times the most recent alarm was automatically smart snoozed.
 //! Used to determine an expired smart alarm avoiding issues with midnight rollover and DST.
@@ -388,6 +394,7 @@ static bool prv_record_alarm_op(AlarmId id, AlarmConfig *config, void *context) 
 // ----------------------------------------------------------------------------------------------
 static void prv_clear_snooze_timer(void) {
   new_timer_stop(s_snooze_timer_id);
+  s_user_snoozed = false;
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -396,9 +403,13 @@ static void prv_process_most_recent_alarm(void) {
   // Only processes the most recent alarm since it modifies the alarm config
   AlarmConfig *config = s_most_recent_alarm_id != ALARM_INVALID_ID ? &s_most_recent_alarm_config :
                                                                      NULL;
+  const bool user_snoozed = s_user_snoozed;
+  s_user_snoozed = false;
   bool trigger = true;
   const bool is_smart = (config && config->is_smart);
-  if (is_smart) {
+  // A user snooze must fire after exactly the configured delay; only the smart
+  // alarm's internal sleep poll may re-evaluate the sleep state and re-snooze.
+  if (is_smart && !user_snoozed) {
     trigger = prv_should_smart_alarm_trigger(config);
     if (!trigger) {
       // Not triggering an event, increment to signify elapsed time and snooze
@@ -1011,6 +1022,8 @@ static void prv_snooze_alarm(int snooze_delay_s) {
 // ----------------------------------------------------------------------------------------------
 void alarm_set_snooze_alarm(void) {
   prv_snooze_alarm(s_snooze_delay_m * SECONDS_PER_MINUTE);
+  // Set after prv_snooze_alarm(): clearing the previous timer resets the flag.
+  s_user_snoozed = true;
 }
 
 // ----------------------------------------------------------------------------------------------
@@ -1165,17 +1178,18 @@ void alarm_handle_clock_change(void) {
         prv_alarm_operation(s_most_recent_alarm_id, prv_record_alarm_op, NULL);
       }
       PBL_LOG_INFO("Clock change during alarm %u, triggered alarm", s_most_recent_alarm_id);
+      // The alarm is now firing; stop the smart-snooze loop.
+      prv_clear_snooze_timer();
+      s_smart_snooze_counter = 0;
     } else {
-      PBL_LOG_INFO("Clock change during alarm %u, clearing snooze state",
+      // Leave the in-flight smart-alarm snooze loop running. It is driven by
+      // s_snooze_timer_id and counts toward the guaranteed fallback fire
+      // (s_smart_snooze_counter >= SMART_ALARM_MAX_SMART_SNOOZE). A benign clock
+      // change such as a periodic phone time sync must not cancel it, or the
+      // smart alarm silently never goes off while basic alarms keep working.
+      PBL_LOG_INFO("Clock change during alarm %u, leaving snooze loop intact",
               s_most_recent_alarm_id);
     }
-
-    // In either case, stop the smart snooze timer and reset the counter.
-    // We leave s_most_recent_alarm_id set because:
-    // - If we triggered: user needs it to snooze/dismiss
-    // - If we didn't trigger: it's harmless (timer stopped, will be overwritten by next alarm)
-    prv_clear_snooze_timer();
-    s_smart_snooze_counter = 0;
   }
 
   // Update the day for any just once alarms

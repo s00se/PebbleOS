@@ -3,12 +3,12 @@
 
 #include "../bitblt_private.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/profiler.h"
 #include "util/graphics.h"
 #include "util/bitset.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #if !defined(__clang__)
 #pragma GCC optimize("O2")

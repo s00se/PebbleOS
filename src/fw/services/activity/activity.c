@@ -3,13 +3,13 @@
 
 #include "applib/data_logging.h"
 #include "applib/health_service.h"
-#include "drivers/battery.h"
-#include "drivers/vibe.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/vibe.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
 #include "mfg/mfg_info.h"
-#include "os/mutex.h"
-#include "os/tick.h"
+#include "pbl/os/mutex.h"
+#include "pbl/os/tick.h"
 #include "popups/health_tracking_ui.h"
 #include "process_management/app_manager.h"
 #include "process_management/worker_manager.h"
@@ -26,11 +26,11 @@
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/base64.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 #include "util/units.h"
 
 #include <pebbleos/cron.h>
@@ -43,6 +43,8 @@
 #include "pbl/services/activity/activity_calculators.h"
 #include "pbl/services/activity/activity_insights.h"
 #include "pbl/services/activity/activity_private.h"
+
+PBL_LOG_MODULE_DEFINE(service_activity, CONFIG_SERVICE_ACTIVITY_LOG_LEVEL);
 
 // Our globals
 static ActivityState s_activity_state;
@@ -279,8 +281,51 @@ void activity_private_settings_close(SettingsFile *file) {
 
 
 // ----------------------------------------------------------------------------------------------
-// Rewrite the settings file. Used when migrating from version 1 to version 2, where all we
-// we need to do is recreate the file in a bigger size
+// Layout of an ActivitySettingsValueHistory record in settings file versions <= 2, when
+// ActivityScalarStore was uint16_t
+typedef struct {
+  uint32_t utc_sec;
+  uint16_t values[ACTIVITY_HISTORY_DAYS];
+} ActivitySettingsValueHistoryV2;
+
+static bool prv_settings_key_is_metric_history(ActivitySettingsKey key) {
+  switch (key) {
+    case ActivitySettingsKeyStepCountHistory:
+    case ActivitySettingsKeyStepMinutesHistory:
+    case ActivitySettingsKeyDistanceMetersHistory:
+    case ActivitySettingsKeySleepTotalMinutesHistory:
+    case ActivitySettingsKeySleepDeepMinutesHistory:
+    case ActivitySettingsKeySleepEntryMinutesHistory:
+    case ActivitySettingsKeySleepEnterAtHistory:
+    case ActivitySettingsKeySleepExitAtHistory:
+    case ActivitySettingsKeyRestingKCaloriesHistory:
+    case ActivitySettingsKeyActiveKCaloriesHistory:
+    case ActivitySettingsKeyRestingHeartRate:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static bool prv_settings_key_is_metric_scalar(ActivitySettingsKey key) {
+  switch (key) {
+    case ActivitySettingsKeySleepState:
+    case ActivitySettingsKeySleepStateMinutes:
+    case ActivitySettingsKeyLastVMC:
+    case ActivitySettingsKeyHeartRateZone1Minutes:
+    case ActivitySettingsKeyHeartRateZone2Minutes:
+    case ActivitySettingsKeyHeartRateZone3Minutes:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// ----------------------------------------------------------------------------------------------
+// Rewrite the settings file. Used when migrating from versions 1 and 2 to version 3: metric
+// records grew from uint16_t to uint32_t values, so history and scalar metric records get
+// expanded; everything else is copied verbatim. This also handles the version 1 to 2 change,
+// which only made the file bigger.
 static void prv_settings_rewrite_cb(SettingsFile *old_file, SettingsFile *new_file,
                                     SettingsRecordInfo *info, void *context) {
   if (info->key_len != sizeof(ActivitySettingsKey)) {
@@ -288,9 +333,34 @@ static void prv_settings_rewrite_cb(SettingsFile *old_file, SettingsFile *new_fi
     return;
   }
 
-  // rewrite this entry
   ActivitySettingsKey key;
   info->get_key(old_file, &key, info->key_len);
+
+  if (prv_settings_key_is_metric_history(key) &&
+      (info->val_len == sizeof(ActivitySettingsValueHistoryV2))) {
+    ActivitySettingsValueHistoryV2 old_history;
+    info->get_val(old_file, &old_history, sizeof(old_history));
+
+    ActivitySettingsValueHistory new_history = {
+      .utc_sec = old_history.utc_sec,
+    };
+    for (int i = 0; i < ACTIVITY_HISTORY_DAYS; i++) {
+      new_history.values[i] = old_history.values[i];
+    }
+    settings_file_set(new_file, &key, info->key_len, &new_history, sizeof(new_history));
+    return;
+  }
+
+  if (prv_settings_key_is_metric_scalar(key) && (info->val_len == sizeof(uint16_t))) {
+    uint16_t old_value;
+    info->get_val(old_file, &old_value, sizeof(old_value));
+
+    const ActivityScalarStore new_value = old_value;
+    settings_file_set(new_file, &key, info->key_len, &new_value, sizeof(new_value));
+    return;
+  }
+
+  // rewrite this entry unmodified
   void *data =  kernel_malloc_check(info->val_len);
   info->get_val(old_file, data, info->val_len);
 
@@ -328,9 +398,9 @@ static SettingsFile *prv_settings_migrate(SettingsFile *file, uint16_t *written_
   PBL_LOG_INFO("Performing settings file migration from verison %"PRIu16"", version);
 
   // Perform migration
-  if (version == 1) {
-    // The only other version right now is version 1, which has the same format but the file
-    // size is different. We need to re-create it using the new, bigger size.
+  if ((version == 1) || (version == 2)) {
+    // Both older versions store metric values as uint16_t, so re-create the file (at the new,
+    // bigger size in the version 1 case) while widening metric records to uint32_t.
     result = settings_file_rewrite(file, prv_settings_rewrite_cb, NULL);
     if (result != S_SUCCESS) {
       PBL_LOG_ERR("Failure %"PRIi32" while re-writing setting file", (int32_t)result);
@@ -776,7 +846,7 @@ static void prv_start_tracking_cb(void *context) {
       PBL_ASSERTN(s_activity_state.accel_session == NULL);
       s_activity_state.accel_session = accel_session_create();
       accel_session_raw_data_subscribe(s_activity_state.accel_session, sampling_rate,
-                                       ACTIVITY_ALGORITHM_MAX_SAMPLES, prv_accel_cb);
+                                       CONFIG_SERVICE_ACTIVITY_BATCH_SAMPLES, prv_accel_cb);
 
       // Subscribe to get heart rate updates and create our measurement logging
       // session if an hrm is present
@@ -1354,7 +1424,7 @@ bool activity_test_feed_samples(AccelRawData *data, uint32_t num_samples) {
       sys_psleep(1);         // Wait for kernelBG to process prior data
     }
 
-    uint32_t chunk_size = MIN(ACTIVITY_ALGORITHM_MAX_SAMPLES, num_samples);
+    uint32_t chunk_size = MIN(CONFIG_SERVICE_ACTIVITY_BATCH_SAMPLES, num_samples);
 
     // Allocate space for the samples
     uint16_t req_size = sizeof(ActivityFeedSamples) + chunk_size * sizeof(AccelRawData);

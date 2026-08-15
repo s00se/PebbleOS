@@ -6,7 +6,7 @@
 
 #include "kernel/util/sleep.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include <stdint.h>
 
@@ -143,7 +143,6 @@ static void resource_storage_file_init(void) {
     const int fd = prv_file_open_by_name(name, op_flags);
 
     const uint32_t file_length = prv_file_common_get_length_and_close(fd);
-    PBL_LOG_INFO("File %s has length %"PRIu32, name, file_length);
 
     // Now check each entry in the file
     for (uint32_t resource_id = g_file_resource_stores[i].first_resource_id;

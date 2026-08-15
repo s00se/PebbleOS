@@ -7,16 +7,18 @@
 #include "kernel/task_timer_manager.h"
 #include "kernel/util/task_init.h"
 #include "kernel/pebble_tasks.h"
-#include "mcu/interrupts.h"
-#include "os/mutex.h"
-#include "os/tick.h"
-#include "system/logging.h"
+#include "pbl/mcu/interrupts.h"
+#include "pbl/os/mutex.h"
+#include "pbl/os/tick.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
+
+PBL_LOG_MODULE_DEFINE(service_new_timer, CONFIG_SERVICE_NEW_TIMER_LOG_LEVEL);
 
 
 typedef struct {

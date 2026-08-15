@@ -17,7 +17,7 @@
 
 #include "pebble_process_md.h"
 #include "kernel/pebble_tasks.h"
-#include "os/tick.h"
+#include "pbl/os/tick.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/animation_service.h"
 #include "pbl/services/analytics/analytics.h"
@@ -33,12 +33,12 @@
 #include "shell/normal/watchface.h"
 
 #include "syscall/syscall.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "kernel/pbl_malloc.h"
 #include "kernel/ui/modals/modal_manager.h"
-#include "util/heap.h"
+#include "pbl/util/heap.h"
 
 #include "syscall/syscall_internal.h"
 
@@ -185,7 +185,7 @@ void process_manager_init_context(ProcessContext* context,
   context->exit_reason = APP_EXIT_NOT_SPECIFIED;
 }
 
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
 bool process_manager_check_SDK_compatible(const AppInstallId id) {
   AppInstallEntry entry;
   if (!app_install_get_entry_for_install_id(id, &entry)) {
@@ -245,7 +245,7 @@ void process_manager_launch_process(const ProcessLaunchConfig *config) {
   }
 
   const PebbleProcessMd *md = NULL;
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   if (app_install_id_from_app_db(id)) {
       if (!process_manager_check_SDK_compatible(id)) {
         return;
@@ -295,7 +295,7 @@ void process_manager_launch_process(const ProcessLaunchConfig *config) {
     return;
   }
 
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   if (!is_worker) {
     // Check if the app ram size is valid in order to determine if its SDK version is supported.
     if (!app_manager_is_app_supported(md)) {
@@ -383,7 +383,7 @@ bool process_manager_make_process_safe_to_kill(PebbleTask task, bool gracefully)
 
   // If already safe to kill, we're done
   if (context->safe_to_kill) {
-#if !RECOVERY_FW && !SHELL_SDK
+#if !defined(CONFIG_RECOVERY_FW) && !defined(CONFIG_SHELL_SDK)
     // Stop per-watchface time tracking if this was a watchface
     if (context->app_md->process_type == ProcessTypeWatchface) {
       PBL_ANALYTICS_TIMER_STOP(watchface_time_ms);
@@ -423,7 +423,7 @@ bool process_manager_make_process_safe_to_kill(PebbleTask task, bool gracefully)
     if (prv_force_stop_task_if_unprivileged(context)) {
       PBL_LOG_DBG("Got it");
 
-#if !RECOVERY_FW && !SHELL_SDK
+#if !defined(CONFIG_RECOVERY_FW) && !defined(CONFIG_SHELL_SDK)
       // Stop per-watchface time tracking if this was a watchface
       if (context->app_md->process_type == ProcessTypeWatchface) {
         PBL_ANALYTICS_TIMER_STOP(watchface_time_ms);
@@ -545,7 +545,7 @@ void process_manager_process_cleanup(PebbleTask task) {
   hrm_manager_process_cleanup(task, context->install_id);
 #endif
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
 #ifdef CONFIG_MIC
   voice_kill_app_session(task);
 #endif
@@ -553,7 +553,7 @@ void process_manager_process_cleanup(PebbleTask task) {
 
   if (task == PebbleTask_App) {
   }
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 
   // Unregister the task
   pebble_task_unregister(task);

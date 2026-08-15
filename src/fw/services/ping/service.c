@@ -4,18 +4,20 @@
 #include "applib/ui/dialogs/dialog.h"
 #include "applib/ui/dialogs/simple_dialog.h"
 #include "console/prompt.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/battery.h>
 #include "kernel/event_loop.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "pbl/services/accel_manager.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 #include "util/net.h"
 
 #include <inttypes.h>
+
+PBL_LOG_MODULE_DEFINE(service_ping, CONFIG_SERVICE_PING_LOG_LEVEL);
 
 #define PING_ENDPOINT 2001
 #define PING_MIN_PERIOD_SECS  (60 * 60)    // 1 hour

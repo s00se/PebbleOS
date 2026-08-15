@@ -1,17 +1,17 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "sf32lb.h"
+#include <pbl/drivers/uart/sf32lb.h>
 
-#include "drivers/uart.h"
-#include "kernel/util/stop.h"
+#include <pbl/drivers/uart.h>
+#include "pbl/soc/sf32lb/sleep.h"
 #include "system/passert.h"
 
 #include "FreeRTOS.h"
 #include "bf0_hal_dma.h"
 #include "bf0_hal_uart.h"
 
-#include "util/misc.h"
+#include "pbl/util/misc.h"
 
 static void prv_init(UARTDevice *dev, uint32_t mode) {
   HAL_StatusTypeDef ret;
@@ -134,7 +134,7 @@ void uart_set_tx_interrupt_handler(UARTDevice *dev, UARTTXInterruptHandler irq_h
 void uart_set_rx_interrupt_enabled(UARTDevice *dev, bool enabled) {
   PBL_ASSERTN(dev->state->initialized);
   if (enabled) {
-    stop_mode_disable(InhibitorUARTRX);
+    soc_sf32lb_sleep_block(SOC_SF32LB_DEEPSLEEP);
     dev->state->rx_int_enabled = true;
     SET_BIT(dev->state->huart.Instance->CR1, USART_CR1_RXNEIE);
     prv_set_interrupt_enabled(dev, true);
@@ -143,7 +143,7 @@ void uart_set_rx_interrupt_enabled(UARTDevice *dev, bool enabled) {
     prv_set_interrupt_enabled(dev, dev->state->tx_int_enabled);
     CLEAR_BIT(dev->state->huart.Instance->CR1, USART_CR1_RXNEIE);
     dev->state->rx_int_enabled = false;
-    stop_mode_enable(InhibitorUARTRX);
+    soc_sf32lb_sleep_release(SOC_SF32LB_DEEPSLEEP);
   }
 }
 

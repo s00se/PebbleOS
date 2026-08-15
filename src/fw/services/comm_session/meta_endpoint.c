@@ -5,8 +5,10 @@
 
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "util/net.h"
+
+PBL_LOG_MODULE_DECLARE(service_comm_session, CONFIG_SERVICE_COMM_SESSION_LOG_LEVEL);
 
 static const uint16_t META_ENDPOINT_ID = 0;
 
@@ -41,5 +43,5 @@ void meta_endpoint_send_response_async(const MetaResponseInfo *meta_response_inf
 }
 
 void meta_protocol_msg_callback(CommSession *session, const uint8_t* data, size_t length) {
-  PBL_LOG_INFO("Meta endpoint callback called");
+  PBL_LOG_DBG("Meta endpoint callback called");
 }

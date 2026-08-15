@@ -24,12 +24,14 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/data_logging/dls_private.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "syscall/syscall_internal.h"
 
 #include <stdint.h>
 #include <string.h>
+
+PBL_LOG_MODULE_DEFINE(service_comm_session, CONFIG_SERVICE_COMM_SESSION_LOG_LEVEL);
 
 // -------------------------------------------------------------------------------------------------
 // Static variables
@@ -244,7 +246,7 @@ void comm_session_close(CommSession *session, CommSessionCloseReason reason) {
     app_launch_trigger();
 
     // TODO: PBL-1771: find a more graceful way to handle this
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
     system_task_add_callback(dls_private_handle_disconnect, NULL);
 #endif
   }

@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "animation_interpolate.h"
-#include "drivers/rtc.h"
-#include "util/list.h"
+#include <pbl/drivers/rtc.h>
+#include "pbl/util/list.h"
 
 //! @file animation.h
 //! @addtogroup UI
@@ -374,7 +374,7 @@ typedef struct AnimationHandlers {
 bool animation_set_handlers(Animation *animation, AnimationHandlers callbacks, void *context);
 
 //! Gets the callbacks for the animation.
-//! @param animation The animation for which to set up the callbacks.
+//! @param animation_h The animation for which to set up the callbacks.
 //! @return the callbacks in use by this animation
 AnimationHandlers animation_get_handlers(Animation *animation_h);
 

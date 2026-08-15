@@ -1,7 +1,9 @@
 mainmenu "PebbleOS Configuration"
 
 # Per-SoC symbol defaults; loaded first so they take precedence.
-osource "src/fw/soc/*/Kconfig.defconfig"
+osource "soc/*/Kconfig.defconfig"
+
+rsource "soc/Kconfig"
 
 config RELEASE
     bool "Release build"
@@ -11,6 +13,19 @@ config RELEASE
       features like Memfault crash reporting that should only run on
       shipping firmware.
 
+config RECOVERY_FW
+    bool "Recovery firmware (PRF)"
+    help
+      Build the recovery firmware variant. Set via prj_prf.conf when
+      configuring with --variant=prf; do not set manually.
+
+config MFG
+    bool "Manufacturing firmware"
+    help
+      Enable manufacturing-only functionality in the PRF build. PRF
+      and MFG firmwares are mostly the same, so MFG builds also
+      define the recovery-firmware symbols.
+
 config PBLBOOT
     bool "PBLBOOT bootloader"
     help
@@ -19,40 +34,55 @@ config PBLBOOT
       layout with direct XIP. Disable for boards whose SoC bootloader
       consumes a raw image and uses a single firmware slot.
 
-config IS_BIGBOARD
-    bool "Bigboard variant"
+menu "Compiler options"
+
+config LTO
+    bool "Link-time optimization"
+
+choice
+    prompt "Optimization level"
+    default SIZE_OPTIMIZATIONS
+
+config SIZE_OPTIMIZATIONS
+    bool "Optimize for size (-Os)"
+
+config DEBUG_OPTIMIZATIONS
+    bool "Optimize for debugging (-Og)"
+
+config NO_OPTIMIZATIONS
+    bool "No optimizations (-O0)"
     help
-      Engineering/development PCB variant of a board (`_bb` suffix
+      Previously known as "fat firmware". Requires 1M of onboard
+      flash.
+
+endchoice
+
+config COMPILER_SAVE_TEMPS
+    bool "Save compiler temporaries"
+    help
+      Save *.i and *.s files during compilation.
+
+config DEBUG_INFO
+    bool "Debug information"
+    default y
+    help
+      Compile with -g3 debug information.
+
+endmenu
+
+config IS_BIGBOARD
+    bool "Bigboard revision"
+    help
+      Engineering/development PCB revision of a board (`_bb` suffix
       in the board name). Gates bigboard-only behaviour that differs
       from the shipping board.
 
 # Source the active board's Kconfig and its per-board defaults; kconfig.py
-# exports $(BOARD) from the --board argument.
+# exports $(BOARD) and $(BOARD_REVISION) from the --board argument.
 rsource "boards/$(BOARD)/Kconfig"
+osource "boards/$(BOARD)/Kconfig.$(BOARD_REVISION)"
 rsource "boards/$(BOARD)/Kconfig.defconfig"
-
-config BOARD_FAMILY_ASTERIX
-    bool
-    help
-      Hidden symbol selected by boards in the Asterix family.
-
-config BOARD_FAMILY_OBELIX
-    bool
-    help
-      Hidden symbol selected by boards in the Obelix family.
-
-config BOARD_FAMILY_GETAFIX
-    bool
-    help
-      Hidden symbol selected by boards in the Getafix family.
-
-config BOARD_FAMILY_NAME
-    string
-    help
-      Lowercase token identifying the board family (or the single
-      board, for QEMU variants). Used for resource path lookups
-      and string outputs. Set per board in
-      boards/<board>/Kconfig.defconfig.
+osource "boards/$(BOARD)/Kconfig.defconfig.$(BOARD_REVISION)"
 
 config QEMU_MACHINE
     string
@@ -72,6 +102,169 @@ config PLATFORM_GABBRO
     bool "Gabbro"
 endchoice
 
+# App RAM sizes for each SDK app execution environment (2x/3x/4x) supported by
+# the model. For each environment, SEGMENT is the RAM given to the app itself
+# (stack + text + data + bss + heap) and RUNTIME is the RAM reserved for the
+# application runtime (AppState). A SEGMENT of 0 means the environment is
+# unsupported. SEGMENT must be a multiple of eight bytes, as the process loader
+# enforces eight-byte alignment on all segments.
+#
+# emery and gabbro use a 4 KiB app stack (see APP_STACK_NORMAL_SIZE); their
+# segment is sized 2 KiB larger to compensate. All other platforms keep the
+# 2 KiB stack and the historical segment sizes.
+#
+# The per-platform constants below are the source of truth; each environment
+# just selects which legacy SDK platform it maps to.
+
+config APP_RAM_APLITE_SEGMENT_SIZE
+    int
+    default 25952
+
+config APP_RAM_APLITE_RUNTIME_SIZE
+    int
+    default 6820
+
+config APP_RAM_BASALT_SEGMENT_SIZE
+    int
+    default 67584
+
+config APP_RAM_BASALT_RUNTIME_SIZE
+    int
+    default 30720
+
+config APP_RAM_CHALK_SEGMENT_SIZE
+    int
+    default 67584
+
+config APP_RAM_CHALK_RUNTIME_SIZE
+    int
+    default 30720
+
+config APP_RAM_FLINT_SEGMENT_SIZE
+    int
+    default 67584
+
+config APP_RAM_FLINT_RUNTIME_SIZE
+    int
+    default 30720
+
+config APP_RAM_EMERY_SEGMENT_SIZE
+    int
+    default 135168
+
+config APP_RAM_EMERY_RUNTIME_SIZE
+    int
+    default 63488
+
+config APP_RAM_GABBRO_SEGMENT_SIZE
+    int
+    default 135168
+
+config APP_RAM_GABBRO_RUNTIME_SIZE
+    int
+    default 96256
+
+config APP_RAM_2X_SEGMENT_SIZE
+    int
+    default APP_RAM_APLITE_SEGMENT_SIZE if PLATFORM_EMERY
+    default APP_RAM_APLITE_SEGMENT_SIZE if PLATFORM_FLINT
+    default 0
+
+config APP_RAM_2X_RUNTIME_SIZE
+    int
+    default APP_RAM_APLITE_RUNTIME_SIZE if PLATFORM_EMERY
+    default APP_RAM_APLITE_RUNTIME_SIZE if PLATFORM_FLINT
+    default 0
+
+config APP_RAM_3X_SEGMENT_SIZE
+    int
+    default APP_RAM_BASALT_SEGMENT_SIZE if PLATFORM_EMERY
+    default APP_RAM_APLITE_SEGMENT_SIZE if PLATFORM_FLINT
+    default APP_RAM_CHALK_SEGMENT_SIZE if PLATFORM_GABBRO
+    default 0
+
+config APP_RAM_3X_RUNTIME_SIZE
+    int
+    default APP_RAM_BASALT_RUNTIME_SIZE if PLATFORM_EMERY
+    default APP_RAM_APLITE_RUNTIME_SIZE if PLATFORM_FLINT
+    default APP_RAM_CHALK_RUNTIME_SIZE if PLATFORM_GABBRO
+    default 0
+
+config APP_RAM_4X_SEGMENT_SIZE
+    int
+    default APP_RAM_EMERY_SEGMENT_SIZE if PLATFORM_EMERY
+    default APP_RAM_FLINT_SEGMENT_SIZE if PLATFORM_FLINT
+    default APP_RAM_GABBRO_SEGMENT_SIZE if PLATFORM_GABBRO
+    default 0
+
+config APP_RAM_4X_RUNTIME_SIZE
+    int
+    default APP_RAM_EMERY_RUNTIME_SIZE if PLATFORM_EMERY
+    default APP_RAM_FLINT_RUNTIME_SIZE if PLATFORM_FLINT
+    default APP_RAM_GABBRO_RUNTIME_SIZE if PLATFORM_GABBRO
+    default 0
+
+config SRAM_BASE
+    hex
+    help
+      Base address of the SRAM available to PebbleOS (kernel + worker +
+      app). Defaulted per SoC in soc/*/Kconfig.defconfig.
+
+config SRAM_SIZE
+    hex
+    help
+      Size of the SRAM available to PebbleOS (kernel + worker + app).
+      Defaulted per SoC in soc/*/Kconfig.defconfig.
+
+config FLASH_BASE
+    hex
+    help
+      Base address of the memory-mapped flash the firmware is linked to
+      run from. Defaulted per SoC in soc/*/Kconfig.defconfig.
+
+config FLASH_SIZE
+    hex
+    help
+      Total size of the memory-mapped flash the firmware is linked to
+      run from. Defaulted per SoC in soc/*/Kconfig.defconfig.
+
+config FLASH_OFFSET
+    hex
+    help
+      Offset of the flash area this firmware image is linked to run
+      from, relative to FLASH_BASE (e.g. past the bootloader, or past
+      the first slot when linking for the second one). Defaulted per
+      SoC in soc/*/Kconfig.defconfig.
+
+config FIRMWARE_OFFSET
+    int
+    default 0
+    help
+      Offset of the firmware image within its flash slot, reserving room
+      for the image header. Defaulted per SoC in soc/*/Kconfig.defconfig.
+
+config FIRMWARE_SLOT
+    int "Firmware flash slot to link for"
+    range 0 1
+    default 0
+    help
+      On boards with multiple firmware slots (PBLBOOT), which slot this
+      image is linked for. Select with -DCONFIG_FIRMWARE_SLOT=1 at
+      configure time.
+
+config RECOVERY_FW_AS_FW
+    bool "Link the recovery firmware into the normal firmware area"
+    help
+      Build PRF linked to the normal firmware flash area instead of its
+      own. Select with -DCONFIG_RECOVERY_FW_AS_FW=y at configure time.
+
+config FW_FLASH_SIZE
+    hex
+    help
+      Flash space available to this firmware image. Defaulted per SoC or
+      board; a board may shrink it, e.g. when the recovery firmware
+      shares a flash bank with the normal firmware.
+
 choice
     prompt "Screen color depth"
 
@@ -88,5 +281,7 @@ config SCREEN_COLOR_DEPTH_BITS
     default 1 if SCREEN_COLOR_DEPTH_BITS_1
     default 8 if SCREEN_COLOR_DEPTH_BITS_8
 
+rsource "lib/c/Kconfig"
+rsource "subsys/Kconfig"
 rsource "src/Kconfig"
 rsource "third_party/Kconfig"

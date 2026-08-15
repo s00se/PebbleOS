@@ -15,10 +15,10 @@
 #include "pbl/services/comm_session/session_transport.h"
 
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 
 #include <string.h>
 
@@ -78,7 +78,7 @@ static void prv_send_next(Transport *transport) {
 }
 
 static void prv_reset(Transport *transport) {
-  PBL_LOG_INFO("Unimplemented");
+  PBL_LOG_WRN("Unimplemented");
 }
 
 static void prv_granted_kernel_main_cb(void *ctx) {

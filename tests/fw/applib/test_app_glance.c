@@ -4,7 +4,7 @@
 #include "clar.h"
 
 #include "applib/app_glance.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "process_management/app_install_manager.h"
 #include "resource/resource_ids.auto.h"
@@ -14,7 +14,7 @@
 #include "pbl/services/blob_db/app_glance_db_private.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/timeline/timeline_resources.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #define APP_GLANCE_TEST_UUID \
     (UuidMake(0x3d, 0xc6, 0xb9, 0x4c, 0x4, 0x2, 0x48, 0xf4, \

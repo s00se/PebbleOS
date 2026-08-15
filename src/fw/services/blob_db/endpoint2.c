@@ -10,16 +10,18 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/comm_session/session_send_buffer.h"
 #include "pbl/services/analytics/analytics.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/status_codes.h"
 #include "system/hexdump.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/net.h"
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 //! BlobDB Endpoint ID
 static const uint16_t BLOB_DB2_ENDPOINT_ID = 0xb2db;

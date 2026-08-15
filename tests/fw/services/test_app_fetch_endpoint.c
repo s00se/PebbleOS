@@ -5,8 +5,8 @@
 
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/app_fetch_endpoint.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 
 
 #include <stdio.h>
@@ -52,11 +52,11 @@ typedef struct PACKED {
 
 enum {
   APP_FETCH_INSTALL_COMMAND = 0x01,
-} AppFetchCommand;
+};
 
 enum {
   APP_FETCH_INSTALL_RESPONSE = 0x01,
-} AppFetchResponse;
+};
 
 typedef struct AppFetchData {
   CommSession *session;

@@ -4,8 +4,8 @@
 #include "bitblt.h"
 #include "bitblt_private.h"
 
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 #include "util/bitset.h"
 

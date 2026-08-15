@@ -4,31 +4,33 @@
 #include <math.h>
 
 #include "board/board.h"
-#include "drivers/battery.h"
-#include "drivers/pmic.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/pmic.h>
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/battery/battery_state.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/ratio.h"
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
 #include "pbl/services/settings/settings_file.h"
 #endif
 
-#ifdef MANUFACTURING_FW
-#include "drivers/flash.h"
+#ifdef CONFIG_MFG
+#include <pbl/drivers/flash.h>
 #include "flash_region/flash_region.h"
 #endif
 
 #include "nrf_fuel_gauge.h"
 
-#if !defined(RECOVERY_FW) || defined(MANUFACTURING_FW)
+PBL_LOG_MODULE_DECLARE(service_battery, CONFIG_SERVICE_BATTERY_LOG_LEVEL);
+
+#if !defined(CONFIG_RECOVERY_FW) || defined(CONFIG_MFG)
 #define FUEL_GAUGE_STATEFUL 1
 #else
 #define FUEL_GAUGE_STATEFUL 0
@@ -38,7 +40,7 @@
 #define RECONNECTION_DELAY_MS (1 * 1000)
 // TODO: Adjust sample rate based on activity periods once we have good
 // power consumption profiles
-#define BATTERY_SAMPLE_RATE_S 1
+#define BATTERY_SAMPLE_RATE_MIN 1
 
 #define LOG_MIN_SEC 30
 
@@ -46,11 +48,11 @@
 #define BATTERY_MIN_VALID_VOLTAGE_MV 3300
 
 static const struct battery_model prv_battery_model = {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
 #include "battery_asterix.inc"
-#elif defined(CONFIG_BOARD_FAMILY_OBELIX)
+#elif defined(CONFIG_BOARD_OBELIX)
 #include "battery_obelix.inc"
-#elif defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#elif defined(CONFIG_BOARD_GETAFIX)
 #include "battery_getafix.inc"
 #else
 #error "Battery model not defined for this platform"
@@ -68,8 +70,18 @@ static uint64_t prv_ref_time;
 static int32_t s_last_voltage_mv;
 static int32_t s_last_temp_mc;
 static uint32_t s_last_soc_cpct;
+static uint32_t s_soc_cpct_min = UINT32_MAX;
 static int32_t s_analytics_last_voltage_mv;
 static uint32_t s_analytics_last_cpct;
+
+//! Track the lowest SOC seen since the last heartbeat: hourly snapshots miss
+//! brief deep discharges, which matter when correlating battery behavior with
+//! brownout-cleared states.
+static void prv_track_soc_min(void) {
+  if (s_last_soc_cpct < s_soc_cpct_min) {
+    s_soc_cpct_min = s_last_soc_cpct;
+  }
+}
 static uint32_t s_last_tte;
 static uint32_t s_last_ttf;
 static RtcTicks s_last_log;
@@ -80,7 +92,7 @@ static bool s_charger_enabled;
 
 static uint32_t s_save_counter;
 
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
 // In manufacturing firmware, use dedicated MFG_BATTERY_STATE flash region
 static void prv_erase_state(void) {
   flash_erase_subsector_blocking(FLASH_REGION_MFG_BATTERY_STATE_BEGIN);
@@ -211,7 +223,7 @@ static void prv_save_state(void) {
     PBL_LOG_DBG("Fuel gauge state saved");
   }
 }
-#endif // MANUFACTURING_FW
+#endif // CONFIG_MFG
 #endif // FUEL_GAUGE_STATEFUL
 
 static void prv_schedule_update(uint32_t delay, bool force_update);
@@ -360,6 +372,7 @@ static void prv_update_state(void *force_update) {
 
   pct_int = (uint8_t)ceilf(pct);
   s_last_soc_cpct = (uint32_t)(pct * 100.0f);
+  prv_track_soc_min();
   if (pct_int != s_last_battery_charge_state.pct) {
     s_last_battery_charge_state.pct = pct_int;
     s_last_battery_charge_state.charge_percent = (uint32_t)(pct * RATIO32_MAX) / 100U;
@@ -370,7 +383,7 @@ static void prv_update_state(void *force_update) {
     float ttf;
 
     ttf = nrf_fuel_gauge_ttf_get();
-    if (!isnanf(ttf)) {
+    if (!isnan(ttf)) {
       s_last_ttf = (uint32_t)ttf;
     }
 
@@ -379,7 +392,7 @@ static void prv_update_state(void *force_update) {
     float tte;
 
     tte = nrf_fuel_gauge_tte_get();
-    if (!isnanf(tte)) {
+    if (!isnan(tte)) {
       s_last_tte = (uint32_t)tte;
     }
 
@@ -472,10 +485,10 @@ void battery_state_init(void) {
               1000.0f});
   PBL_ASSERTN(ret == 0);
 
-  runtime_parameters.a = NAN_F;
-  runtime_parameters.b = NAN_F;
-  runtime_parameters.c = NAN_F;
-  runtime_parameters.d = NAN_F;
+  runtime_parameters.a = NAN;
+  runtime_parameters.b = NAN;
+  runtime_parameters.c = NAN;
+  runtime_parameters.d = NAN;
   runtime_parameters.discard_positive_deltaz = true;
 
   nrf_fuel_gauge_param_adjust(&runtime_parameters);
@@ -508,6 +521,7 @@ void battery_state_init(void) {
   prv_ref_time = rtc_get_ticks();
 
   s_last_soc_cpct = (uint32_t)(pct * 100.0f);
+  prv_track_soc_min();
   s_last_battery_charge_state.pct = (uint8_t)ceilf(pct);
   s_last_battery_charge_state.charge_percent = (uint32_t)(pct * RATIO32_MAX) / 100U;
 
@@ -524,7 +538,7 @@ void battery_state_init(void) {
   static RegularTimerInfo battery_regular_timer = {
     .cb = prv_callback_from_regular_timer
   };
-  regular_timer_add_multisecond_callback(&battery_regular_timer, BATTERY_SAMPLE_RATE_S);
+  regular_timer_add_multiminute_callback(&battery_regular_timer, BATTERY_SAMPLE_RATE_MIN);
 
   s_analytics_last_voltage_mv = s_last_voltage_mv;
   s_analytics_last_cpct = s_last_soc_cpct;
@@ -592,6 +606,11 @@ void pbl_analytics_external_collect_battery(void) {
   d_mv = battery_mv - s_analytics_last_voltage_mv;
   PBL_ANALYTICS_SET_UNSIGNED(battery_voltage, battery_mv);
   PBL_ANALYTICS_SET_SIGNED(battery_voltage_delta, d_mv);
+  PBL_ANALYTICS_SET_SIGNED(battery_temp_c, s_last_temp_mc);
+  PBL_ANALYTICS_SET_UNSIGNED(battery_soc_pct_min,
+                             s_soc_cpct_min < battery_soc_cpct ? s_soc_cpct_min
+                                                               : battery_soc_cpct);
+  s_soc_cpct_min = battery_soc_cpct;
   s_analytics_last_voltage_mv = battery_mv;
 
   d_soc_cpct = MAX((int32_t)s_analytics_last_cpct - (int32_t)battery_soc_cpct, 0);

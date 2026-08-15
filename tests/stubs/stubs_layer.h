@@ -5,11 +5,13 @@
 
 #include "applib/ui/layer.h"
 
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include "stubs_unobstructed_area.h"
 
 WEAK void layer_init(Layer *layer, const GRect *frame) { }
+
+WEAK void layer_deinit(Layer *layer) { }
 
 WEAK void layer_add_child(Layer *parent, Layer *child) { }
 

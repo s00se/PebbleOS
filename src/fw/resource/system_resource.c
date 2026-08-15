@@ -13,10 +13,10 @@
 #include "resource/resource.h"
 #include "resource/resource_storage.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/testinfra.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "resource/resource_ids.auto.h"
 #include "resource/resource_version.auto.h"

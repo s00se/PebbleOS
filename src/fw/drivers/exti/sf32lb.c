@@ -1,15 +1,17 @@
 /* SPDX-FileCopyrightText: 2025 SiFli Technologies(Nanjing) Co., Ltd */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/exti.h"
+#include <pbl/drivers/exti.h>
 
 #include <stdbool.h>
 
 #include "board/board.h"
-#include "drivers/periph_config.h"
 #include "kernel/events.h"
-#include "mcu/interrupts.h"
+#include "pbl/mcu/interrupts.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
+
+PBL_LOG_MODULE_DEFINE(driver_exti_sf32lb, CONFIG_DRIVER_EXTI_LOG_LEVEL);
 
 #define EXTI_MAX_GPIO1_PIN_NUM 16
 

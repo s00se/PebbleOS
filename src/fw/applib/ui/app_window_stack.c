@@ -11,9 +11,9 @@
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
-#include "system/logging.h"
-#include "util/list.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/list.h"
+#include "pbl/util/size.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"

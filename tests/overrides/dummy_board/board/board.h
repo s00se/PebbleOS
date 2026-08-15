@@ -35,14 +35,10 @@ static const BoardConfigPower BOARD_CONFIG_POWER = {
 
 typedef struct {
   uint8_t default_motion_sensitivity;
-} AccelConfig;
-
-typedef struct {
-  const AccelConfig accel_config;
 } BoardConfigAccel;
 
 static const BoardConfigAccel BOARD_CONFIG_ACCEL = {
-  .accel_config = { .default_motion_sensitivity = 0 },
+  .default_motion_sensitivity = 0,
 };
 
 typedef const struct MicDevice MicDevice;
@@ -50,3 +46,5 @@ static MicDevice * const MIC = (void *)0;
 
 typedef const struct HRMDevice HRMDevice;
 static HRMDevice * const HRM = (void *)0;
+
+static const struct AudioDevice * const AUDIO = (void *)0;

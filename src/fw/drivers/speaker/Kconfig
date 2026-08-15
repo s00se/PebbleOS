@@ -15,12 +15,19 @@ config SPEAKER_DA7212
 
 config SPEAKER_SF32LB
     bool "SiFli SF32LB AUDEC"
+    default y if SOC_SF32LB52
+    select HAL_SIFLI_AUDCODEC
     help
       Support for the SiFli SF32LB audio codec / DAC speaker output.
 
 config SPEAKER_QEMU
     bool "QEMU audio"
+    default y if SOC_QEMU
     help
       QEMU audio device backing the speaker for emulated builds.
+
+module = DRIVER_SPEAKER
+module-str = Speaker
+source "subsys/logging/Kconfig.template.log_level"
 
 endif # SPEAKER

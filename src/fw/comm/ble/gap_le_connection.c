@@ -10,12 +10,12 @@
 
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "util/list.h"
+#include "pbl/util/list.h"
 
-#include <btutil/bt_device.h>
-#include <btutil/sm_util.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/btutil/sm_util.h>
 
 //! About this module
 //! -----------------

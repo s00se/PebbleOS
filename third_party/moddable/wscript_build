@@ -12,8 +12,6 @@ else:
 
     if not bld.options.onlysdk:
         libxs_sources = [
-            'moddable/build/devices/esp/lib/bsearch/bsearch.c',
-            'moddable/build/devices/pebble/lib/qsort/qsort.c',
             'moddable/xs/platforms/mc/xsHosts.c',
             'moddable/xs/platforms/pebble/xsHost.c',
             'moddable/xs/platforms/pebble/xsPlatform.c',
@@ -149,6 +147,7 @@ else:
             'moddable/build/devices/pebble/modules/vibes/vibes.c',
             'moddable/build/devices/pebble/modules/wakeup/wakeup.c',
             'moddable/build/devices/pebble/modules/dictation/dictation.c',
+            'moddable/build/devices/pebble/modules/health/pebble-health.c',
             'moddable/modules/io/files/pebble/files-pebble.c',
             'moddable/build/tmp/pebble/release/host/mc.xs.c',
             'moddable/build/tmp/pebble/release/host/mc.resources.c',
@@ -186,7 +185,7 @@ else:
             '-DMODGCC=1',
             '-DMODINSTRUMENTATION=1',
             '-DmxInstrument',
-            '-DmxUseDefaultSharedChunks=1',
+            '-DmxDebug',
             '-fno-strict-aliasing',
             '-fomit-frame-pointer',
             '-fshort-enums',
@@ -200,7 +199,8 @@ else:
             '-Wno-unused-function',
             '-Wno-unused-variable',
             '-Wno-misleading-indentation',
-            '-Wno-error=maybe-uninitialized']
+            '-Wno-error=maybe-uninitialized',
+            '-Wno-error=implicit-fallthrough']
 
         bld(export_includes=libxs_includes, name='libxs_includes')
 

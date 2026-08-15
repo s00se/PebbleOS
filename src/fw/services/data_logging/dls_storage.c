@@ -5,21 +5,23 @@
 #include "pbl/services/data_logging/dls_storage.h"
 #include "pbl/services/data_logging/dls_list.h"
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "kernel/pbl_malloc.h"
 #include "kernel/pebble_tasks.h"
 #include "kernel/util/sleep.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/string.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/string.h"
 
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
+
+PBL_LOG_MODULE_DECLARE(service_data_logging, CONFIG_SERVICE_DATA_LOGGING_LOG_LEVEL);
 
 
 typedef enum {
@@ -924,7 +926,7 @@ void dls_storage_rebuild(void) {
       goto bad_session;
     }
 
-    PBL_LOG_INFO("Restored session %"PRIu8
+    PBL_LOG_DBG("Restored session %"PRIu8
             " num_bytes:%"PRIu32", read_offset:%"PRIu32", write_offset:%"PRIu32,
             session->comm.session_id, session->storage.num_bytes,
             session->storage.read_offset, session->storage.write_offset);
@@ -952,7 +954,7 @@ bad_session:
     head = (PFSFileListEntry *)head->list_node.next;
   }
 
-  PBL_LOG_INFO("Restored %d sessions. Total %"PRIu32" bytes allocated",
+  PBL_LOG_DBG("Restored %d sessions. Total %"PRIu32" bytes allocated",
           num_sessions_restored, prv_get_total_file_system_bytes());
 
   // Free the directory list

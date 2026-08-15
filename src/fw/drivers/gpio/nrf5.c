@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/gpio.h"
+#include <pbl/drivers/gpio.h>
 #include "system/passert.h"
 
 #include <hal/nrf_gpio.h>
@@ -10,12 +10,14 @@ void gpio_input_init(const InputConfig *pin_config) {
   nrf_gpio_pin_dir_set(pin_config->gpio_pin, NRF_GPIO_PIN_DIR_INPUT);
 }
 
-void gpio_output_init(const OutputConfig *pin_config, GPIOOType_TypeDef otype,
-                      GPIOSpeed_TypeDef speed) {
+bool gpio_input_read(const InputConfig *input_cfg) {
+  return nrf_gpio_pin_read(input_cfg->gpio_pin) != 0U;
+}
+
+void gpio_output_init(const OutputConfig *pin_config, GPIOOType_TypeDef otype) {
   if (otype == GPIO_OType_OD)
     WTF;
 
-  /* XXX: speed */
   nrf_gpio_cfg(pin_config->gpio_pin, NRF_GPIO_PIN_DIR_OUTPUT, NRF_GPIO_PIN_INPUT_DISCONNECT, NRF_GPIO_PIN_NOPULL, NRF_GPIO_PIN_S0S1, NRF_GPIO_PIN_NOSENSE);
 }
 

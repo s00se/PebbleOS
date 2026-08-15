@@ -22,10 +22,10 @@
 #include "pbl/services/timeline/timeline.h"
 #include "pbl/services/timeline/timeline_actions.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/time/time.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 
 #include <stdio.h>
 #include <string.h>

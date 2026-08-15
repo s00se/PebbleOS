@@ -6,8 +6,10 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/system_task.h"
 #include "pbl/services/data_logging/data_logging_service.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
+
+PBL_LOG_MODULE_DEFINE(service_health_sync_endpoint, CONFIG_SERVICE_HEALTH_SYNC_ENDPOINT_LOG_LEVEL);
 
 #define HEALTH_SYNC_ENDPOINT_ID 911
 #define ACK 0x1

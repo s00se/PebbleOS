@@ -4,9 +4,9 @@
 #include "board/board.h"
 
 // UART device for debug serial
-#include "drivers/uart/qemu.h"
-#include "drivers/speaker/qemu/audio.h"
-#include "drivers/mic/qemu/mic_definitions.h"
+#include <pbl/drivers/uart/qemu.h>
+#include <pbl/drivers/speaker/qemu/audio.h>
+#include <pbl/drivers/mic/qemu/mic_definitions.h>
 
 static UARTDeviceState s_dbg_uart_state = {};
 
@@ -43,10 +43,6 @@ static QemuDisplayDevice s_display = {
 };
 
 DisplayDevice *const DISPLAY = &s_display;
-
-const BoardConfigActuator BOARD_CONFIG_VIBE = {
-  .options = 0,
-};
 
 const BoardConfigPower BOARD_CONFIG_POWER = {
   .low_power_threshold = 2U,

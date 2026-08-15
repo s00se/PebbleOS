@@ -21,9 +21,9 @@
 #include "pbl/services/timeline/swap_layer.h"
 #include "pbl/services/timeline/timeline_resources.h"
 #include "shell/normal/watchface.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <string.h>
 
@@ -132,7 +132,7 @@ static void prv_show_incoming_call(void *data) {
     .number = "+55 408-555-1212",
     .name = "Pankajavalli Balamurugan",
   };
-  phone_ui_handle_incoming_call(&caller, true, false, PhoneCallSource_PP);
+  phone_ui_handle_incoming_call(&caller, false, PhoneCallSource_PP);
 }
 
 static void prv_select_single_click_handler(ClickRecognizerRef recognizer, void *context) {

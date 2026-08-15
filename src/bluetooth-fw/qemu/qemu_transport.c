@@ -8,14 +8,14 @@
 #include "pbl/services/comm_session/session_transport.h"
 
 #include "system/passert.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include "comm/bt_lock.h"
 
-#include "drivers/qemu/qemu_serial.h"
-#include "drivers/qemu/qemu_serial_private.h"
+#include <pbl/drivers/qemu/qemu_serial.h>
+#include <pbl/drivers/qemu/qemu_serial_private.h>
 
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <bluetooth/qemu_transport.h>
 
@@ -60,7 +60,7 @@ static void prv_send_next(Transport *transport) {
 // -----------------------------------------------------------------------------------------
 // bt_lock() is held by caller
 static void prv_reset(Transport *transport) {
-  PBL_LOG_INFO("Unimplemented");
+  PBL_LOG_WRN("Unimplemented");
 }
 
 static void prv_granted_kernel_main_cb(void *ctx) {

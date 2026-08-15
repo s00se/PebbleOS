@@ -4,24 +4,25 @@
 #include "pbl/services/battery/battery_state.h"
 
 #ifdef CONFIG_QEMU
-#include "drivers/qemu/qemu_battery.h"
+#include <pbl/drivers/qemu/qemu_battery.h>
 #endif
 
 #include "board/board.h"
 #include "debug/power_tracking.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/battery.h>
 #include "kernel/events.h"
-#include "kernel/util/stop.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/battery/battery_curve.h"
 #include "pbl/services/battery/battery_monitor.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/ratio.h"
+
+PBL_LOG_MODULE_DECLARE(service_battery, CONFIG_SERVICE_BATTERY_LOG_LEVEL);
 
 #ifdef DEBUG_BATTERY_STATE
 #define BATTERY_SAMPLE_RATE_MS 1000
@@ -55,7 +56,6 @@ typedef struct BatteryState {
   uint64_t init_time;
   uint32_t percent;
   uint16_t voltage;
-  uint8_t skip_count;
   ConnectionStateID connection;
 } BatteryState;
 
@@ -159,21 +159,7 @@ static ConnectionStateID prv_get_connection_state(void) {
 }
 
 static void prv_update_state(void *force_update) {
-  const uint8_t MAX_SAMPLE_SKIPS = 5;
   bool forced = (bool)force_update;
-  // Large current draws will cause the voltage supplied by the battery to
-  // droop. We try to only sample the battery when there is minimal
-  // activity. We look to see if stop mode is allowed because this is a good
-  // indicator that no peripherals are in use (i.e vibe, backlight, etc)
-  if ((s_last_battery_state.skip_count < MAX_SAMPLE_SKIPS) &&
-      !forced && !stop_mode_is_allowed()) {
-    s_last_battery_state.skip_count++;
-    return;
-  }
-
-  if (s_last_battery_state.skip_count == MAX_SAMPLE_SKIPS) {
-  }
-  s_last_battery_state.skip_count = 0;
 
   // Driver communication
 

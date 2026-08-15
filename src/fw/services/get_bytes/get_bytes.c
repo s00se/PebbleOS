@@ -4,8 +4,8 @@
 #include "pbl/services/get_bytes/get_bytes_private.h"
 
 #include "comm/bluetooth_analytics.h"
-#include "drivers/flash.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
@@ -14,19 +14,21 @@
 #include "pbl/services/system_task.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 #include "util/net.h"
 
 #include <bluetooth/analytics.h>
 #include <bluetooth/conn_event_stats.h>
-#include <os/tick.h>
+#include <pbl/os/tick.h>
 
 #include "portmacro.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+PBL_LOG_MODULE_DEFINE(service_get_bytes, CONFIG_SERVICE_GET_BYTES_LOG_LEVEL);
 
 // Internal state used by the protocol handler.
 typedef struct {

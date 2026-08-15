@@ -20,13 +20,15 @@ jobs:
         with:
           filters: |
             src:
+              - '.github/actions/**'
               - '.github/workflows/build-prf.yml'
+              - 'boards/**'
               - 'platform/**'
               - 'resources/**'
               - 'src/**'
               - 'tools/**'
               - 'third_party/**'
-              - 'waftools/**'
+              - 'tools/waf/**'
               - 'waf'
               - 'wscript'
 
@@ -36,17 +38,17 @@ jobs:
     runs-on: ubuntu-24.04
 
     container:
-      image: ghcr.io/coredevices/pebbleos-docker:v5
+      image: ghcr.io/coredevices/pebbleos-docker:v6
 
     strategy:
       matrix:
         board:
           - asterix
-          - obelix_dvt
-          - obelix_pvt
-          - getafix_evt
-          - getafix_dvt
-          - getafix_dvt2
+          - obelix@dvt
+          - obelix@pvt
+          - getafix@evt
+          - getafix@dvt
+          - getafix@dvt2
         mode:
           - normal
           - mfg
@@ -61,6 +63,11 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Rebase onto target branch
+        uses: ./.github/actions/rebase
+        with:
+          submodules: true
+
       - name: Install Python dependencies
         run: |
           pip install -U pip
@@ -71,13 +78,19 @@ jobs:
         shell: bash
         run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
 
+      - name: Set artifact board name
+        id: artifact_board
+        run: echo "NAME=$(printf '%s' "$BOARD" | tr @ _)" >> "$GITHUB_OUTPUT"
+        env:
+          BOARD: ${{ matrix.board }}
+
       - name: Configure
         run: |
           if [ "${{ matrix.mode }}" == "mfg" ]; then
-            OPTS="--mfg --nohash"
+            OPTS="-DCONFIG_MFG=y -DCONFIG_LOG_HASHED=n"
           fi
 
-          ./waf configure --board ${{ matrix.board }} --variant=prf $OPTS
+          ./waf configure --board '${{ matrix.board }}' --variant=prf $OPTS
 
       - name: Build
         run: ./waf build
@@ -88,16 +101,16 @@ jobs:
       - name: Store
         uses: actions/upload-artifact@v6
         with:
-          name: prf-${{ matrix.board }}-${{ matrix.mode }}
+          name: prf-${{ steps.artifact_board.outputs.NAME }}-${{ matrix.mode }}
           path: |
             build/**/*.elf
             build/**/*.pbz
-            build/src/fw/tintin_fw_loghash_dict.json
+            build/pebbleos_loghash_dict.json
 
       - name: Get Build ID
         id: build_id
         run: |
-          echo "BUILD_ID=$(readelf -n build/src/fw/tintin_fw.elf | sed -n -e 's/^.*Build ID: //p')" >> "$GITHUB_OUTPUT"
+          echo "BUILD_ID=$(readelf -n build/pebbleos.elf | sed -n -e 's/^.*Build ID: //p')" >> "$GITHUB_OUTPUT"
 
       - name: Upload log hash dictionary
         if: ${{ github.event_name == 'push' && github.repository == 'coredevices/PebbleOS' }}
@@ -107,7 +120,7 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: |
           pip install awscli
-          aws s3 cp build/src/fw/tintin_fw_loghash_dict.json \
+          aws s3 cp build/pebbleos_loghash_dict.json \
             "s3://${{ vars.LOG_HASH_BUCKET_NAME }}/${{ steps.build_id.outputs.BUILD_ID }}-${{ github.sha }}-prf.json" \
             --endpoint-url "${{ vars.LOG_HASH_BUCKET_ENDPOINT }}"
 

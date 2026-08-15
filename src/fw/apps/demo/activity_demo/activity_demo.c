@@ -15,10 +15,10 @@
 #include "pbl/services/activity/activity_insights.h"
 #include "pbl/services/data_logging/data_logging_service.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
-#include "util/size.h"
-#include "util/string.h"
-#include "util/trig.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
+#include "pbl/util/trig.h"
 
 #include "activity_demo.h"
 

@@ -2,20 +2,25 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/exti.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/touch/touch_sensor.h"
+#include <pbl/drivers/exti.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/touch/touch_sensor.h>
 #include "kernel/events.h"
 #include "kernel/util/sleep.h"
-#include "os/tick.h"
+#include "pbl/os/tick.h"
+#include "pbl/services/analytics/analytics.h"
+#include "pbl/services/regular_timer.h"
 #include "pbl/services/touch/touch.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include "cst816_fw.h"
+
+PBL_LOG_MODULE_DEFINE(driver_touch_cst816, CONFIG_DRIVER_TOUCH_LOG_LEVEL);
 
 #define CST816_RESET_CYCLE_TIME       10  /* ms */
 #define CST816_POR_DELAY_TIME         110 /* ms */
@@ -54,11 +59,28 @@
 #define CST816_FW_CHECKSUM_REG        0xA008
 #define CST816_FW_VER_INFO_INDEX      (-11)
 
+/* Workaround: the CST816 occasionally wedges and stops asserting its INT line.
+ * If no touch activity is seen between two watchdog checks, hard-reset it. */
+#define CST816_WATCHDOG_PERIOD_MIN    30
+
+/* The chip stays awake for 2s after a wake; an interrupt seen >=2s after the
+ * previous one therefore marks a fresh sleep->awake transition. */
+#define CST816_WAKE_SPACING_MS        2000
+
 static bool s_callback_scheduled = false;
+static bool s_enabled = false;
+static bool s_reset_scheduled = false;
+static bool s_activity_since_check = false;
+static RtcTicks s_last_irq_ticks = 0;
 static PebbleMutex *s_i2c_lock;
 
 static void prv_exti_cb(bool *should_context_switch);
 static void cst816_hw_reset(void);
+static void prv_watchdog_cb(void *data);
+
+static RegularTimerInfo s_watchdog_timer = {
+  .cb = prv_watchdog_cb,
+};
 
 static bool prv_read_data(uint16_t register_address, uint8_t *result, uint16_t size, bool is_work_mode) {
   mutex_lock(s_i2c_lock);
@@ -188,6 +210,9 @@ static bool cst816_fw_update(void) {
         return false;
       }
 
+      PBL_LOG_INFO("Updated firmware to version 0x%02X (0x%04X)",
+                   app_bin[sizeof(app_bin) + CST816_FW_VER_INFO_INDEX], checksum_read);
+
       cst816_hw_reset();
       return true;
     }
@@ -219,7 +244,7 @@ void touch_sensor_init(void) {
   s_i2c_lock = mutex_create();
 
 #ifndef RESET_PIN_CTRLBY_NPM1300
-  gpio_output_init(&CST816->reset, GPIO_OType_PP, GPIO_Speed_2MHz);
+  gpio_output_init(&CST816->reset, GPIO_OType_PP);
 #endif
 
   cst816_hw_reset();
@@ -227,27 +252,27 @@ void touch_sensor_init(void) {
   rv = prv_read_data(CST816_CHIP_ID_REG, &chip_id, 1, 1);
   if (!rv) {
     PBL_LOG_ERR("Could not read CST816 chip ID");
-    return;
+  } else {
+    rv = prv_read_data(CST816_FW_VERSION_REG, &fw_version, 1, 1);
+    if (!rv) {
+      PBL_LOG_ERR("Could not read CST816 firmware version");
+    } else {
+      PBL_LOG_DBG("CST816 firmware: 0x%02X", fw_version);
+    }
   }
-
-  rv = prv_read_data(CST816_FW_VERSION_REG, &fw_version, 1, 1);
-  if (!rv) {
-    PBL_LOG_ERR("Could not read CST816 firmware version");
-    return;
-  }
-
-  PBL_LOG_DBG("CST816 firmware: 0x%02X", fw_version);
 
   uint8_t target_ver = app_bin[sizeof(app_bin) + CST816_FW_VER_INFO_INDEX];
 
-  if (target_ver != fw_version) {
-    if (cst816_enter_bootmode()) {
-      rv = cst816_fw_update();
-      if (!rv) {
-        return;
-      }
-    } else {
+  // A chip stranded in boot mode by an interrupted update stops answering at
+  // the work-mode address; only a reflash brings it back, so attempt the
+  // update even when the probe above failed.
+  if (!rv || target_ver != fw_version) {
+    if (!cst816_enter_bootmode()) {
       PBL_LOG_ERR("Could not enter CST816 boot mode");
+      return;
+    }
+    rv = cst816_fw_update();
+    if (!rv) {
       return;
     }
   }
@@ -261,6 +286,16 @@ void touch_sensor_init(void) {
 static void prv_process_pending_messages(void* context) {
   bool rv;
   s_callback_scheduled = false;
+
+  // Any interrupt means the chip is alive; pet the idle watchdog.
+  s_activity_since_check = true;
+
+  // Count interrupts spaced >=2s apart as sleep->awake transitions.
+  RtcTicks now = rtc_get_ticks();
+  if (now - s_last_irq_ticks >= milliseconds_to_ticks(CST816_WAKE_SPACING_MS)) {
+    PBL_ANALYTICS_ADD(touch_driver_wake_cnt, 1);
+  }
+  s_last_irq_ticks = now;
 
   uint8_t id;
   rv = prv_read_data(CST816_GESTURE_ID, &id, 1, 1);
@@ -323,11 +358,51 @@ static void prv_exti_cb(bool *should_context_switch) {
   s_callback_scheduled = true;
 }
 
+// Runs on the system task: the actual recovery reset (cst816_hw_reset() sleeps
+// ~120ms, so it must not run on the regular-timer task).
+static void prv_idle_reset_worker(void *context) {
+  s_reset_scheduled = false;
+  if (!s_enabled) {
+    return;
+  }
+
+  exti_disable(CST816->int_exti);
+  cst816_hw_reset();
+  s_callback_scheduled = false;
+  s_activity_since_check = true;
+  exti_enable(CST816->int_exti);
+}
+
+// Runs on the regular-timer (NewTimers) task; keep it cheap, just offload.
+static void prv_watchdog_cb(void *data) {
+  if (!s_enabled || s_reset_scheduled) {
+    return;
+  }
+
+  if (s_activity_since_check) {
+    s_activity_since_check = false;
+    return;
+  }
+
+  s_reset_scheduled = true;
+  system_task_add_callback(prv_idle_reset_worker, NULL);
+}
+
 void touch_sensor_set_enabled(bool enabled) {
+  cst816_hw_reset();
+
   if (enabled) {
-    cst816_hw_reset();
     exti_enable(CST816->int_exti);
+    s_enabled = true;
+    s_activity_since_check = true;
+    if (!regular_timer_is_scheduled(&s_watchdog_timer)) {
+      regular_timer_add_multiminute_callback(&s_watchdog_timer, CST816_WATCHDOG_PERIOD_MIN);
+    }
   } else {
+    s_enabled = false;
+    if (regular_timer_is_scheduled(&s_watchdog_timer)) {
+      regular_timer_remove_callback(&s_watchdog_timer);
+    }
     uint8_t data = CST816_POWER_MODE_SLEEP;
     prv_write_data(CST816_POWER_MODE_REG, &data, 1, 1);
     exti_disable(CST816->int_exti);

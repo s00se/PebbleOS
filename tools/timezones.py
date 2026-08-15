@@ -404,11 +404,11 @@ def zoneinfo_to_bin(zoneinfo_list, dstrule_list, zonelink_list, output_bin):
     # Continent_index City gmt_offset_minutes tz_abbr dst_id
 
     # Unsigned short - count of entries
-    output_bin.write(struct.pack("H", len(zoneinfo_list)))
+    output_bin.write(struct.pack("<H", len(zoneinfo_list)))
     # Unsigned short - count of DST rules
-    output_bin.write(struct.pack("H", len(dstzone_dict.values())))
+    output_bin.write(struct.pack("<H", len(dstzone_dict.values())))
     # Unsigned short - count of links
-    output_bin.write(struct.pack("H", len(zonelink_list)))
+    output_bin.write(struct.pack("<H", len(zonelink_list)))
 
     region_id_list = []
     # write all the timezones to file
@@ -437,11 +437,11 @@ def zoneinfo_to_bin(zoneinfo_list, dstrule_list, zonelink_list, output_bin):
         else:
             gmt_offset_minutes = int(hours) * 60 + int(minutes)
         # signed short, for negative gmtoffsets
-        output_bin.write(struct.pack("h", gmt_offset_minutes))
+        output_bin.write(struct.pack("<h", gmt_offset_minutes))
 
         # fix timezone abbreviations that no longer have a DST mode
         if dst_zone not in dstzone_dict:
-            tz_abbr.replace("*", "S")  # remove
+            tz_abbr = tz_abbr.replace("*", "S")
         if len(tz_abbr) > 5:
             raise Exception(f"Timezone abbreviation too long: {tz_abbr}")
         output_bin.write(
@@ -457,7 +457,17 @@ def zoneinfo_to_bin(zoneinfo_list, dstrule_list, zonelink_list, output_bin):
             )
         output_bin.write(struct.pack("B", dstzone_index))
 
-    # Write all the dstrules we know about
+    # Each DST rule is serialised as 8 bytes (see TimezoneDSTRule). The reader in
+    # service.c treats every DST ID as a fixed-size pair of rules
+    # (DST_RULE_PAIR_BYTES = 16) so it can compute the offset of the link section
+    # as (dst_rule_count - 1) * 16. Every DST ID must therefore occupy exactly
+    # 16 bytes, regardless of how many rules tzdata actually supplies. Most zones
+    # have a start (D) and end (S) rule; some have none (e.g. zones that dropped
+    # DST) and a few have only one (e.g. negative-DST zones like Eire). Pad the
+    # shortfall and truncate any excess so the stride stays fixed.
+    DST_RULE_BYTES = 8
+    DST_RULES_PER_ID = 2
+    DST_RULE_PAIR_BYTES = DST_RULE_BYTES * DST_RULES_PER_ID
     for id in sorted(dstzone_dict.values()):
         # Don't write anything for the "No Rule" dst rule, aka "-".
         if id == 0:
@@ -466,20 +476,20 @@ def zoneinfo_to_bin(zoneinfo_list, dstrule_list, zonelink_list, output_bin):
         # Look up the zone in our dstrule list. There should be two entries for each valid id,
         # one for the start and one for the end of DST. Note that it may not be found if it's a
         # dstrule that doesn't exist anymore.
-        dstrules = [r for r in dstrule_list if r.dstzone == id]
-        if len(dstrules) == 0:
-            # Just write out 16 bytes of padding instead of a real rule
-            output_bin.write(bytearray(16))
-        else:
-            for dstrule in dstrules:
-                output_bin.write(struct.pack("c", dstrule.ds.encode("utf8")))
-                output_bin.write(struct.pack("B", dstrule.wday))
-                output_bin.write(struct.pack("B", dstrule.flag))
-                output_bin.write(struct.pack("B", dstrule.month))
-                output_bin.write(struct.pack("B", dstrule.mday))
-                output_bin.write(struct.pack("B", dstrule.hour))
-                output_bin.write(struct.pack("B", dstrule.minute))
-                output_bin.write(struct.pack("B", 0))
+        dstrules = [r for r in dstrule_list if r.dstzone == id][:DST_RULES_PER_ID]
+        bytes_written = 0
+        for dstrule in dstrules:
+            output_bin.write(struct.pack("c", dstrule.ds.encode("utf8")))
+            output_bin.write(struct.pack("B", dstrule.wday))
+            output_bin.write(struct.pack("B", dstrule.flag))
+            output_bin.write(struct.pack("B", dstrule.month))
+            output_bin.write(struct.pack("B", dstrule.mday))
+            output_bin.write(struct.pack("B", dstrule.hour))
+            output_bin.write(struct.pack("B", dstrule.minute))
+            output_bin.write(struct.pack("B", 0))
+            bytes_written += DST_RULE_BYTES
+        # Pad to a full fixed-size DST ID entry.
+        output_bin.write(bytearray(DST_RULE_PAIR_BYTES - bytes_written))
 
     # write all the timezone links to file
     for line in zonelink_list:
@@ -489,7 +499,7 @@ def zoneinfo_to_bin(zoneinfo_list, dstrule_list, zonelink_list, output_bin):
         except ValueError as e:
             print("Couldn't find region, skipping:", e)
             continue
-        output_bin.write(struct.pack("H", region_id))
+        output_bin.write(struct.pack("<H", region_id))
         output_bin.write(linkname.ljust(TIMEZONE_LINK_NAME_LENGTH, "\0").encode("utf8"))
 
 

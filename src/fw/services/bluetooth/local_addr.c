@@ -4,12 +4,14 @@
 #include "pbl/services/bluetooth/local_addr.h"
 
 #include "comm/bt_lock.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/id.h>
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
+
+PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 
 static uint32_t s_pra_cycling_pause_count;
 static BTDeviceAddress s_pinned_addr;
@@ -102,7 +104,7 @@ void bt_local_addr_init(void) {
     bt_local_addr_pause_cycling();
     s_cycling_paused_due_to_dependent_bondings = true;
   } else {
-#if RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
     PBL_LOG_INFO("Pausing address cycling because PRF!");
     bt_local_addr_pause_cycling();
 #else

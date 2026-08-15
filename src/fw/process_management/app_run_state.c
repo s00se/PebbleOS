@@ -10,8 +10,8 @@
 #include "process_management/app_manager.h"
 #include "process_management/process_manager.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 
 #define PB_APP_STATE_ENDPOINT_ID       0x34
 
@@ -112,7 +112,7 @@ void app_run_state_protocol_msg_callback(CommSession *session, const uint8_t *da
 }
 
 void app_run_state_send_update(const Uuid *uuid, AppState app_state) {
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   // FIXME: Need to actually factor out this so it's totally removed from PRF, but for now just
   // pull it all. We can't use this here because we don't initialize app message at all.
   return;

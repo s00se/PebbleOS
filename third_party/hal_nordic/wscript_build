@@ -35,7 +35,7 @@ micro_includes = [
     'nrfx/templates',
 ]
 
-if bld.env.CONFIG_BOARD_FAMILY_ASTERIX:
+if bld.env.CONFIG_BOARD_ASTERIX:
     # is there a better way to do this?
     micro_includes += ['../../src/fw/board/boards/board_asterix']
 else:
@@ -44,6 +44,6 @@ else:
 bld.stlib(source=micro_sources,
           target='hal_nordic',
           cflags=['-Wno-unused-variable'],
-          use=['cmsis_core', 'pblibc'],
+          use=['cmsis_core'],
           includes=micro_includes,
           export_includes=micro_includes)

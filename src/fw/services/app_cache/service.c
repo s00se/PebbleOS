@@ -17,15 +17,17 @@
 #include "shell/normal/quick_launch.h"
 #include "shell/normal/watchface.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/list.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/list.h"
+#include "pbl/util/math.h"
 #include "util/time/time.h"
 #include "util/units.h"
 
-//! @file app_cache.c
+PBL_LOG_MODULE_DEFINE(service_app_cache, CONFIG_SERVICE_APP_CACHE_LOG_LEVEL);
+
+//! @file
 //! App Cache
 
 //! The App Cache keeps track of the install date, last launch, launch count, and size of an
@@ -51,7 +53,7 @@
 
 //! Keep enough room for the maximum sized application based on platform, plus a little more room.
 //! Source: https://pebbletechnology.atlassian.net/wiki/display/DEV/PBW+3.0
-#if defined(CONFIG_BOARD_FAMILY_ASTERIX) || defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(UNITTEST)
+#if defined(CONFIG_BOARD_ASTERIX) || defined(CONFIG_BOARD_OBELIX) || defined(UNITTEST)
 #define APP_SPACE_BUFFER KiBYTES(300)
 #else
 #define APP_SPACE_BUFFER MiBYTES(4)
@@ -59,8 +61,8 @@
 
 #define MAX_PRIORITY ((uint32_t)~0)
 
-// 4 quick launch apps, 1 default watchface, 1 default worker
-#define DO_NOT_EVICT_LIST_SIZE (NUM_BUTTONS + 2)
+// 8 quick launch apps, 1 default watchface, 1 default worker
+#define DO_NOT_EVICT_LIST_SIZE (10)
 
 static PebbleRecursiveMutex *s_app_cache_mutex = NULL;
 
@@ -269,11 +271,15 @@ status_t app_cache_free_up_space(uint32_t bytes_needed) {
     EachEvictData evict_data = (EachEvictData) {
       .bytes_needed = bytes_needed,
       .do_not_evict = {
-#if !SHELL_SDK
+#ifndef CONFIG_SHELL_SDK
         quick_launch_get_app(BUTTON_ID_UP),
         quick_launch_get_app(BUTTON_ID_SELECT),
         quick_launch_get_app(BUTTON_ID_DOWN),
         quick_launch_get_app(BUTTON_ID_BACK),
+        quick_launch_single_click_get_app(BUTTON_ID_UP),
+        quick_launch_single_click_get_app(BUTTON_ID_DOWN),
+        quick_launch_combo_back_up_get_app(),
+        quick_launch_combo_up_down_get_app(),
 #endif
         watchface_get_default_install_id(),
         worker_preferences_get_default_worker(),

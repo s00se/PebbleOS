@@ -3,15 +3,17 @@
 
 #include "pbl/services/regular_timer.h"
 
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/new_timer/new_timer.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "FreeRTOS.h"
 #include "portmacro.h"
 
 #include <time.h>
+
+PBL_LOG_MODULE_DEFINE(service_regular_timer, CONFIG_SERVICE_REGULAR_TIMER_LOG_LEVEL);
 
 //! Don't let users modify the list while callbacks are occurring.
 static PebbleMutex * s_callback_list_semaphore = 0;

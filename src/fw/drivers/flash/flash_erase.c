@@ -1,19 +1,22 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/flash.h"
-#include "drivers/flash/flash_internal.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/flash/flash_internal.h>
 
 #include "flash_region/flash_region.h"
 #include "pbl/services/new_timer/new_timer.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
 
 #include <inttypes.h>
+
+PBL_LOG_MODULE_DECLARE(driver_flash, CONFIG_DRIVER_FLASH_LOG_LEVEL);
 
 
 static SemaphoreHandle_t s_erase_mutex = NULL;

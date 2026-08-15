@@ -7,7 +7,7 @@
 #include "applib/event_service_client.h"
 #include "applib/ui/kino/kino_player.h"
 #include "process_management/app_menu_data_source.h"
-#include "util/list.h"
+#include "pbl/util/list.h"
 
 //! Handler called when a glance in the service's cache changes, either because a glance's slice
 //! expired or a glance was reloaded.
@@ -35,7 +35,7 @@ typedef struct LauncherAppGlanceService {
   KinoReel *generic_glance_icon;
   //! The resource ID of the generic glance icon
   uint32_t generic_glance_icon_resource_id;
-  //! A \ref KinoReelPlayer for the currently selected glance
+  //! A \ref KinoPlayer for the currently selected glance
   KinoPlayer glance_reel_player;
 } LauncherAppGlanceService;
 

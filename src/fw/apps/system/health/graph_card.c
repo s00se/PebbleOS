@@ -6,13 +6,13 @@
 #include "applib/graphics/graphics.h"
 #include "applib/graphics/text.h"
 #include "board/display.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/clock.h"
 #include "pbl/services/i18n/i18n.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 #include "util/time/time.h"
 
 // Compile-time display offset calculations

@@ -7,12 +7,17 @@
 #include "syscall/syscall.h"
 
 #include "system/passert.h"
-#include "system/logging.h"
-#include "drivers/vibe.h"
+#include <pbl/logging/logging.h>
+#include <pbl/drivers/vibe.h>
 #include "applib/applib_malloc.auto.h"
 #include "util/net.h"
 
-#define VIBE_SCORE_MAX_REPEAT_DELAY_MS (10000) // matches MAX_VIBE_DURATION_MS in vibe_pattern
+PBL_LOG_MODULE_DECLARE(service_vibes, CONFIG_SERVICE_VIBES_LOG_LEVEL);
+
+// The repeat delay is a passive wait between score playbacks (it never becomes
+// a hardware vibe step), so it is not bound by MAX_VIBE_DURATION_MS in
+// vibe_pattern. The LPM alarm score uses 50s. Keep in sync with json2vibe.py.
+#define VIBE_SCORE_MAX_REPEAT_DELAY_MS (60000)
 
 static VibeNote *prv_vibe_score_get_note_list(GenericAttribute *notes_attribute) {
   return (VibeNote *)notes_attribute->data;
@@ -210,9 +215,6 @@ void vibe_score_do_vibe(VibeScore *score) {
       sys_vibe_pattern_enqueue_step_raw(note->brake_duration_ms, vibe_get_braking_strength());
     }
   }
-  unsigned int repeat_delay = vibe_score_get_repeat_delay_ms(score);
-  PBL_LOG_INFO("vibe_score: do_vibe, %u notes, %ums total, repeat_delay=%ums",
-               pattern_length, total_duration_ms, repeat_delay);
   sys_vibe_pattern_trigger_start();
 }
 

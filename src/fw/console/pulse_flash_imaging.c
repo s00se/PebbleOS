@@ -6,14 +6,14 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "drivers/flash.h"
+#include <pbl/drivers/flash.h>
 #include "flash_region/flash_region.h"
 #include "kernel/util/sleep.h"
 #include "resource/resource_storage_flash.h"
 #include "pbl/services/system_task.h"
 #include "system/bootbits.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 
 #define IMAGING_CMD_ERASE (1)
 #define IMAGING_CMD_WRITE (2)

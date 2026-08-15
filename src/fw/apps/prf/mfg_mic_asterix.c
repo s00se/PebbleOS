@@ -8,15 +8,15 @@
 #include "applib/ui/text_layer.h"
 #include "applib/ui/window.h"
 #include "board/board.h"
-#include "drivers/i2c.h"
-#include "drivers/flash.h"
-#include "drivers/clocksource.h"
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/clocksource.h>
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/util/sleep.h"
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <FreeRTOS.h>
 #include <semphr.h>

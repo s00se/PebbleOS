@@ -4,20 +4,22 @@
 #include <string.h>
 
 #include "console/prompt.h"
-#include "drivers/rtc.h"
-#include "os/mutex.h"
+#include <pbl/drivers/rtc.h>
+#include "pbl/os/mutex.h"
 #include "pbl/services/analytics/backend.h"
 #include "pbl/services/system_task.h"
 #include "pbl/services/data_logging/data_logging_service.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/build_id.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/uuid.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/build_id.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/uuid.h"
 
-#define NATIVE_HEARTBEAT_RECORD_VERSION 1
+PBL_LOG_MODULE_DEFINE(service_analytics, CONFIG_SERVICE_ANALYTICS_LOG_LEVEL);
+
+#define NATIVE_HEARTBEAT_RECORD_VERSION 3
 
 /* Heartbeat record logged to DLS */
 struct PACKED native_heartbeat_record {

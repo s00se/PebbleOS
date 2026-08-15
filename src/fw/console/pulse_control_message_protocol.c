@@ -1,11 +1,11 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
 
 #include "pulse_control_message_protocol.h"
 
-#include <util/attributes.h>
+#include <pbl/util/attributes.h>
 
 #include <stdint.h>
 #include <string.h>

@@ -5,9 +5,9 @@
 
 #include "applib/accel_service.h"
 #include "applib/compass_service.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "console/prompt.h"
-#include "drivers/mag.h"
+#include <pbl/drivers/mag.h>
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/battery/battery_monitor.h"
@@ -15,15 +15,17 @@
 #include "pbl/services/regular_timer.h"
 #include "syscall/syscall_internal.h"
 #include "syscall/syscall.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "kernel/util/sleep.h"
 
 #include "system/rtc_registers.h"
 
+PBL_LOG_MODULE_DEFINE(service_ecompass, CONFIG_SERVICE_ECOMPASS_LOG_LEVEL);
+
 // Duration (in minutes) to run high-frequency sampling during compass calibration.
 // Defaults to 2 minutes, but some platforms (e.g., Asterix) require longer.
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
 #define ECOMPASS_CALIBRATION_FAST_MINUTES 6
 #else
 #define ECOMPASS_CALIBRATION_FAST_MINUTES 2
@@ -42,7 +44,7 @@ static bool s_saved_corr_present = false;
 static int16_t s_saved_corr[3] = { 0 };
 
 static int32_t s_last_heading = -1; // the last heading we found
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
 static MagData s_last_mag_sample = { 0 };
 #endif
 
@@ -262,7 +264,7 @@ void ecompass_service_handle(void) {
     return;
   }
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   s_last_mag_sample = mag_data;
 #endif
 
@@ -380,7 +382,7 @@ DEFINE_SYSCALL(void, sys_ecompass_get_last_heading, CompassHeadingData *data) {
 //////////////////////////////////////////////////////////////////////////////////
 // Recovery firmware commands
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
 static void prv_ecompass_start_callback(void *context) {
   s_accel_session = accel_session_create();
   accel_session_raw_data_subscribe(s_accel_session, ACCEL_SAMPLING_25HZ, 5,
@@ -416,4 +418,4 @@ void command_compass_peek(void) {
   prompt_send_response_fmt(buffer, sizeof(buffer), "Mx=%d, My=%d, Mz=%d",
       s_last_mag_sample.x, s_last_mag_sample.y, s_last_mag_sample.z);
 }
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW

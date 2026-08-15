@@ -24,10 +24,10 @@
 #include "comm/ble/kernel_le_client/kernel_le_client.h"
 #include "console/serial_console.h"
 #include "console/prompt.h"
-#include "drivers/backlight.h"
-#include "drivers/battery.h"
-#include "drivers/button.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/backlight.h>
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/button.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel/core_dump.h"
 #include "kernel/kernel_applib_state.h"
 #include "kernel/low_power.h"
@@ -36,7 +36,7 @@
 #include "kernel/ui/kernel_ui.h"
 #include "kernel/ui/modals/modal_manager.h"
 #include "kernel/util/factory_reset.h"
-#include "mcu/fpu.h"
+#include "pbl/mcu/fpu.h"
 #include "process_management/app_install_manager.h"
 #include "process_management/app_manager.h"
 #include "process_management/app_run_state.h"
@@ -46,6 +46,7 @@
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/battery/battery_state.h"
 #include "pbl/services/battery/battery_monitor.h"
+#include "pbl/services/clock.h"
 #include "pbl/services/compositor/compositor.h"
 #include "pbl/services/cron.h"
 #include "pbl/services/debounced_connection_service.h"
@@ -60,6 +61,7 @@
 #include "pbl/services/system_task.h"
 #ifdef CONFIG_TOUCH
 #include "pbl/services/touch/touch.h"
+#include "pbl/services/touch/touch_session.h"
 #endif
 #include "pbl/services/vibe_pattern.h"
 #include "pbl/services/alarms/alarm.h"
@@ -76,12 +78,12 @@
 #include "shell/shell_event_loop.h"
 #include "shell/system_app_state_machine.h"
 #include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/reset.h"
 #include "system/testinfra.h"
 #include "util/bitset.h"
-#include "util/struct.h"
+#include "pbl/util/struct.h"
 #include "system/version.h"
 
 #include "FreeRTOS.h"
@@ -90,7 +92,7 @@
 static const uint32_t FORCE_QUIT_HOLD_MS = 1500;
 static int s_back_hold_timer = TIMER_INVALID_ID;
 
-#ifndef SHELL_SDK
+#ifndef CONFIG_SHELL_SDK
 static const uint32_t BACK_QUICKPRESS_INTERVAL_TICKS = 300;
 static const int BACK_QUICKPRESS_COREDUMP_PRESSES = 10;
 static RtcTicks s_back_quickpress_last = 0;
@@ -195,7 +197,7 @@ static void launcher_handle_button_event(PebbleEvent* e) {
       PBL_ASSERTN(success);
     }
     
-#ifndef SHELL_SDK
+#ifndef CONFIG_SHELL_SDK
     // 10 quick-presses of the back button triggers a manual coredump, if
     // that feature is enabled in system settings.
     if (button_id == BUTTON_ID_BACK) {
@@ -206,12 +208,15 @@ static void launcher_handle_button_event(PebbleEvent* e) {
       s_back_quickpress_last = now;
       s_back_quickpress_count++;
       if (s_back_quickpress_count >= BACK_QUICKPRESS_COREDUMP_PRESSES && shell_prefs_can_coredump_on_request()) {
-        PBL_LOG_INFO("triggering core dump because you asked for it!");
         core_dump_reset(true /* is_forced */);
       }
     }
-#endif // !SHELL_SDK
+#endif // !defined(CONFIG_SHELL_SDK)
 
+#ifdef CONFIG_TOUCH
+    // Deliberate interaction: open the touch session so touch may navigate.
+    touch_session_arm(TouchSessionArmSource_Button);
+#endif
     light_button_pressed();
   } else if (e->type == PEBBLE_BUTTON_UP_EVENT) {
     if (button_id == BUTTON_ID_BACK) {
@@ -279,7 +284,7 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
 
     case PEBBLE_ACCEL_SHAKE_EVENT:
       if (backlight_is_motion_enabled()) {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
         const bool dnd_suppresses_backlight = do_not_disturb_is_active() &&
                                              !alerts_preferences_dnd_get_motion_backlight();
         if (!dnd_suppresses_backlight)
@@ -292,37 +297,63 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
 
 #ifdef CONFIG_TOUCH
     case PEBBLE_TOUCH_EVENT: {
-      // When an app subscribes to touch events we ignore the global
-      // wake-on-touch preference and instead tie the backlight to the touch
-      // itself: forced on while a finger is down, then timed out after liftoff.
-      if (!touch_has_app_subscribers()) {
-        return;
-      }
-#ifndef RECOVERY_FW
-      const bool dnd_suppresses_backlight = do_not_disturb_is_active() &&
-                                           !alerts_preferences_dnd_get_touch_backlight();
-      if (dnd_suppresses_backlight) {
-        return;
-      }
-#endif
+      // Raw touches only navigate (and hold the backlight) while the
+      // interaction session is active; unarmed contact on the idle watchface
+      // stays fully inert. Release on liftoff ungated so the refcount can't
+      // leak if the session expired or touch was disabled mid-touch.
+      TouchWakeGateResult gate = {0};
+      const bool is_modal_focused =
+          (modal_manager_get_enabled() &&
+           !(modal_manager_get_properties() & ModalProperty_Unfocused));
       if (e->touch.event.type == TouchEvent_Touchdown) {
-        light_button_pressed();
+        const bool armed = touch_session_is_active();
+        // Light follows touch only where something consumes the touch: the
+        // modal twin, a live app nav twin (system app under the nav pref, or
+        // an explicit opt-in), a raw-subscribed app, or the armed watchface
+        // (so touch keeps the woken screen lit). A third-party app that never
+        // subscribed to touch gets no touchdown light.
+        const bool backlight_driven =
+            (touch_nav_enabled() &&
+             (is_modal_focused || app_manager_is_watchface_running())) ||
+            touch_app_nav_active() || touch_has_app_subscribers();
+        bool dnd_suppresses_backlight = false;
+#ifndef CONFIG_RECOVERY_FW
+        dnd_suppresses_backlight =
+            do_not_disturb_is_active() && !alerts_preferences_dnd_get_touch_backlight();
+#endif
+        // Also gate on the global touch switch: a Touchdown that raced past a
+        // global-off toggle (different queues, no global FIFO) must not grab an
+        // unreleasable backlight hold once touch is disabled. Both the toggle
+        // and this handler run on KernelMain, so the switch is already settled.
+        // DnD only suppresses the light; an armed touch still navigates.
+        if (armed && backlight_driven && !dnd_suppresses_backlight &&
+            touch_service_is_globally_enabled()) {
+          light_touch_down();
+        }
+        gate = (TouchWakeGateResult){.latch = !armed};
+        if (!armed) {
+          PBL_ANALYTICS_ADD(touch_gated_touchdown_count, 1);
+        }
+        touch_session_extend();
       } else if (e->touch.event.type == TouchEvent_Liftoff) {
-        light_button_released();
+        light_touch_up();
+        touch_session_extend();
       }
+      if (compositor_is_animating() || is_modal_focused) {
+        // Mask the app task while the compositor animates or a modal is focused. Otherwise a
+        // gesture over a focused modal reaches both the kernel (modal) twin and the app twin
+        // underneath, firing two actions for one gesture; masking the app leaves the modal twin
+        // as the sole handler (mirrors the button path above). Stamp WITHOUT returning so the
+        // wake-gate latch below still runs.
+        e->task_mask |= 1 << PebbleTask_App;
+      }
+      // Stamp on every event so the whole gesture carries the Touchdown latch.
+      touch_wake_gate_stamp(&e->touch.event, gate);
       return;
     }
 #endif
 
     case PEBBLE_GESTURE_EVENT: {
-#ifdef CONFIG_TOUCH
-      // While an app is subscribed the touch event handler drives the
-      // backlight, so skip gesture-based wake to avoid a redundant trigger
-      // (and to keep double-tap from waking when only single-tap is wanted).
-      if (touch_has_app_subscribers()) {
-        return;
-      }
-#endif
       bool wake_on_gesture = false;
       switch (backlight_get_touch_wake()) {
         case BacklightTouchWake_Tap:
@@ -337,7 +368,12 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
           break;
       }
       if (wake_on_gesture) {
-#ifndef RECOVERY_FW
+#ifdef CONFIG_TOUCH
+        // The wake gesture is the deliberate act that opens the touch session;
+        // arm even when DnD keeps the light off, so touch still works.
+        touch_session_arm(TouchSessionArmSource_WakeGesture);
+#endif
+#ifndef CONFIG_RECOVERY_FW
         const bool dnd_suppresses_backlight = do_not_disturb_is_active() &&
                                              !alerts_preferences_dnd_get_touch_backlight();
         if (!dnd_suppresses_backlight)
@@ -360,7 +396,7 @@ static NOINLINE void prv_minimal_event_handler(PebbleEvent* e) {
         process_manager_launch_process(&(ProcessLaunchConfig) {
           .id = e->launch_app.id,
           .common = common,
-#if SHELL_SDK
+#ifdef CONFIG_SHELL_SDK
           // Dev iteration: when the phone sends AppRunStateStart (typically
           // `pebble install` over pypkjs), force-kill the current app instead
           // of waiting up to 3s for graceful deinit.  Misbehaving third-party
@@ -423,7 +459,7 @@ static NOINLINE void prv_extended_event_handler(PebbleEvent* e) {
     case PEBBLE_PUT_BYTES_EVENT:
       // TODO: inform the other things interested in put_bytes (apps?)
       firmware_update_pb_event_handler(&e->put_bytes);
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
       app_fetch_put_bytes_event_handler(&e->put_bytes);
 #endif
       return;
@@ -440,7 +476,7 @@ static NOINLINE void prv_extended_event_handler(PebbleEvent* e) {
 
     case PEBBLE_SET_TIME_EVENT:
     {
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
       PebbleSetTimeEvent *set_time_info = &e->set_time_info;
 
       // The phone and watch time may be out of sync by a second or two (since
@@ -477,7 +513,7 @@ static NOINLINE void prv_extended_event_handler(PebbleEvent* e) {
       PebbleCommSessionEvent *comm_session_event = &e->bluetooth.comm_session_event;
       debounced_connection_service_handle_event(comm_session_event);
       put_bytes_handle_comm_session_event(comm_session_event);
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
       if (comm_session_event->is_system) {
         // tell the phone which app is running
         const Uuid *running_uuid = &app_manager_get_current_app_md()->uuid;
@@ -528,6 +564,11 @@ static NOINLINE void prv_launcher_main_loop_init(void) {
   app_manager_init();
   worker_manager_init();
   vibes_init();
+#ifndef CONFIG_RECOVERY_FW
+  // The chime path uses alerts prefs and the vibe pattern service, so only
+  // arm it once vibes_init() has run; it must never fire before this point.
+  clock_hourly_chime_arm();
+#endif
   battery_monitor_init();
   evented_timer_init();
 #ifdef CONFIG_MAG
@@ -555,20 +596,20 @@ static NOINLINE void prv_launcher_main_loop_init(void) {
   light_button_pressed();
   light_button_released();
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   i18n_set_resource(shell_prefs_get_language_resource_id());
 #endif
   app_manager_start_first_app();
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   // Launch the default worker. If any of the buttons are down, or we hit 2 strikes already,
   // skip this. This insures that we don't enter PRF for a bad worker.
   if (launcher_panic_get_current_error()) {
-    PBL_LOG_INFO("Not launching worker because launcher panic");
+    PBL_LOG_WRN("Not launching worker because launcher panic");
   } else if (button_get_state_bits() != 0) {
-    PBL_LOG_INFO("Not launching worker because button held");
+    PBL_LOG_WRN("Not launching worker because button held");
   } else if (boot_bit_test(BOOT_BIT_FW_START_FAIL_STRIKE_TWO)) {
-    PBL_LOG_INFO("Not launching worker because of 2 strikes");
+    PBL_LOG_WRN("Not launching worker because of 2 strikes");
   } else {
     process_manager_launch_process(&(ProcessLaunchConfig) {
       .id = worker_manager_get_default_install_id(),
@@ -582,7 +623,7 @@ static NOINLINE void prv_launcher_main_loop_init(void) {
 }
 
 void launcher_main_loop(void) {
-  PBL_LOG_ALWAYS("Starting Launcher");
+  PBL_LOG_INFO("Starting Launcher");
 
   prv_launcher_main_loop_init();
 

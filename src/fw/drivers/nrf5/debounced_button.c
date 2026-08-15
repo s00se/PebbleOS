@@ -1,16 +1,13 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/debounced_button.h"
+#include <pbl/drivers/debounced_button.h>
 
 #include "board/board.h"
-#include "drivers/button.h"
-#include "drivers/exti.h"
-#include "drivers/gpio.h"
-#include "drivers/periph_config.h"
-#include "drivers/timer.h"
+#include <pbl/drivers/button.h>
+#include <pbl/drivers/exti.h>
+#include <pbl/drivers/gpio.h>
 #include "kernel/events.h"
-#include "kernel/util/stop.h"
 #include "system/bootbits.h"
 #include "system/reset.h"
 #include "util/bitset.h"
@@ -57,9 +54,6 @@ static bool prv_check_timer_enabled(void) {
 static void disable_button_timer(void) {
   if (prv_check_timer_enabled()) {
     nrfx_timer_disable(&BOARD_CONFIG_BUTTON.timer);
-
-    // Allow us to enter stop mode
-    stop_mode_enable(InhibitorButton);
   }
 }
 
@@ -69,9 +63,6 @@ static void prv_enable_button_timer(void) {
   if (!prv_check_timer_enabled()) {
     nrfx_timer_enable(&BOARD_CONFIG_BUTTON.timer);
     nrfx_timer_resume(&BOARD_CONFIG_BUTTON.timer);
-
-    // Prevent us from entering stop mode (and disabling the clock timer)
-    stop_mode_disable(InhibitorButton);
   }
   __enable_irq();
 }
@@ -166,7 +157,7 @@ static void prv_timer_handler(nrf_timer_event_t evt, void *ctx) {
     }
   }
 
-#if !defined(MANUFACTURING_FW)
+#if !defined(CONFIG_MFG)
   // Now that s_debounced_button_state is updated, check to see if the user is holding down the reset
   // combination.
   static uint32_t s_hard_reset_timer = 0;

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "pbl/services/notifications/alerts_preferences_private.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 VibeScoreId WEAK alerts_preferences_get_vibe_score_for_client(VibeClient client) {
   return VibeScoreId_Invalid;
@@ -20,6 +20,10 @@ bool WEAK alerts_preferences_get_notification_alternative_design(void) {
 
 DndNotificationMode WEAK alerts_preferences_dnd_get_show_notifications(void) {
   return DndNotificationModeShow;
+}
+
+bool WEAK alerts_preferences_dnd_get_auto_dismiss(void) {
+  return false;
 }
 
 bool WEAK alerts_preferences_get_notification_vibe_delay(void) {

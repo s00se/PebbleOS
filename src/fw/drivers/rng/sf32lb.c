@@ -1,12 +1,14 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/rng.h"
-#include "system/logging.h"
+#include <pbl/drivers/rng.h>
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "bf0_hal_rcc.h"
 #include "bf0_hal_rng.h"
+
+PBL_LOG_MODULE_DEFINE(driver_rng_sf32lb, CONFIG_DRIVER_RNG_LOG_LEVEL);
 
 static bool s_inited;
 static RNG_HandleTypeDef s_rng_hdl = {

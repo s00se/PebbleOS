@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "comm/ble/gap_le_slave_discovery.h"
@@ -14,6 +14,8 @@
 #include "pbl/services/system_task.h"
 
 #include <bluetooth/pairability.h>
+
+PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 
 static void prv_pairability_timer_cb(void *unused);
 

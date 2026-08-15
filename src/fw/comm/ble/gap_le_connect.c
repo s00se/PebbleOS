@@ -3,7 +3,6 @@
 
 #include "gap_le_connect.h"
 
-#include "ble_log.h"
 #include "comm/bluetooth_analytics.h"
 #include "comm/bt_conn_mgr.h"
 #include "comm/bt_lock.h"
@@ -16,13 +15,15 @@
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
 #include "pbl/services/bluetooth/ble_hrm.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <bluetooth/gap_le_connect.h>
 #include <bluetooth/pebble_pairing_service.h>
-#include <btutil/bt_device.h>
-#include <btutil/sm_util.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/btutil/sm_util.h>
+
+PBL_LOG_MODULE_DECLARE(bt, CONFIG_BT_LOG_LEVEL);
 
 #if BLE_MASTER_CONNECT_SUPPORT // FIXME: Shouldn't be needed after PBL-32761
 extern unsigned int bt_stack_id(void);
@@ -450,11 +451,11 @@ void bt_driver_handle_le_connection_complete_event(const BleConnectionCompleteEv
         // There is no connection intent from our end. This could be the phone that is connecting
         // for the first time. Let the connection watchdog (TODO: PBL-11236) take care of
         // disconnecting at some point, if the connection ends up being unused.
-        PBL_LOG_INFO("No intent for connection");
+        PBL_LOG_WRN("No intent for connection");
         bluetooth_analytics_handle_no_intent_for_connection();
       }
 
-#if RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
       // In PRF, stick to shortest connection interval indefinitely:
       conn_mgr_set_ble_conn_response_time(connection, BtConsumerPRF,
                                           ResponseTimeMin, MAX_PERIOD_RUN_FOREVER);
@@ -493,7 +494,7 @@ void bt_driver_handle_le_disconnection_complete_event(const BleDisconnectionComp
     case HciStatusCode_Success: {
       // Disconnection! Update our records:
       GAPLEConnection *connection = gap_le_connection_by_device(&event->peer_address);
-#if defined(CONFIG_HRM) && !defined(RECOVERY_FW)
+#if defined(CONFIG_HRM) && !defined(CONFIG_RECOVERY_FW)
       ble_hrm_handle_disconnection(connection);
 #endif
       const bool local_is_master = connection->local_is_master;
@@ -598,7 +599,8 @@ void bt_driver_handle_le_encryption_change_event(const BleEncryptionChange *even
   connection->is_encrypted = true;
 
   if (!local_is_master) {
-    PBL_LOG_INFO("LE encryption change: encrypted");
+    // The driver already logs encryption changes (status/encrypted/bonded)
+    PBL_LOG_DBG("LE encryption change: encrypted");
     bluetooth_analytics_handle_encryption_change();
     bt_driver_pebble_pairing_service_handle_status_change(connection);
   }
@@ -622,7 +624,7 @@ static void prv_start_connecting(void) {
     return;
   }
 
-  BLE_LOG_DEBUG("Starting connecting..");
+  PBL_LOG_DBG("Starting connecting..");
   unsigned int stack_id = bt_stack_id();
   // See Bluetooth Spec 4.0, Volume 2, Part E, Chapter 7.8.12:
   const GAP_LE_Address_Type_t local_addr_type = BleAddressType_Random;
@@ -656,7 +658,7 @@ static void prv_stop_connecting(void) {
     return;
   }
   unsigned int stack_id = bt_stack_id();
-  BLE_LOG_DEBUG("Stopping connecting...");
+  PBL_LOG_DBG("Stopping connecting...");
   // See Bluetooth Spec 4.0, Volume 2, Part E, Chapter 7.8.13:
   const int r = GAP_LE_Cancel_Create_Connection(stack_id);
   if (r) {
@@ -674,8 +676,8 @@ static void prv_mutate_whitelist(const BTDeviceInternal *device, bool is_adding)
   PBL_LOG_WRN("BLE whitelist mutation unimplemented");
 #else
   unsigned int stack_id = bt_stack_id();
-  BLE_LOG_DEBUG("Mutating white-list (adding=%u): " BD_ADDR_FMT,
-                is_adding, BT_DEVICE_ADDRESS_XPLODE(device->address));
+  PBL_LOG_DBG("Mutating white-list (adding=%u): " BD_ADDR_FMT,
+              is_adding, BT_DEVICE_ADDRESS_XPLODE(device->address));
   // See Bluetooth Spec 4.0, Volume 2, Part E, Chapter 7.8.15:
   uint8_t status = 0;
   const uint8_t addr_type = device->is_random_address ? 0x01 : 0x00;
@@ -854,10 +856,12 @@ static BTErrno prv_register_intent(struct RegisterIntentRequest *request,
   if (request->is_bonding_based) {
     const GAPLEConnection *connection = gap_le_connection_find_by_irk(&request->bonding.irk);
     if (!connection) {
-      if (sm_is_pairing_info_irk_not_used(&request->bonding.irk)) {
-        PBL_LOG_DBG("register_intent: IRK not used, searching by addr");
-        connection = gap_le_connection_by_device(&request->bonding.device);
-      }
+      // The connection may not have an IRK yet: right after pairing, the
+      // bonding change handlers (which get here) can run before the driver
+      // delivers the IRK update. The connection address has already been
+      // updated to the identity address by then, so match by address too.
+      PBL_LOG_DBG("register_intent: no IRK match, searching by addr");
+      connection = gap_le_connection_by_device(&request->bonding.device);
     }
     if (connection) {
       is_already_connected = true;
@@ -1008,6 +1012,7 @@ void gap_le_connect_handle_bonding_change(BTBondingID bonding_id, BtPersistBondi
                                               &updated_bonding.device, NULL)) {
       WTF;
     }
+    updated_bonding.id = bonding_id;
   }
 
   bt_lock();
@@ -1128,7 +1133,7 @@ BTErrno gap_le_connect_cancel_by_bonding(BTBondingID bonding_id, GAPLEClient cli
 void gap_le_connect_cancel_all(GAPLEClient client) {
   bt_lock();
   {
-    BLE_LOG_DEBUG("Cancel connecting all for client %u...", client);
+    PBL_LOG_DBG("Cancel connecting all for client %u...", client);
 
     GAPLEConnectionIntent *intent = s_intents;
     while (intent) {

@@ -25,17 +25,19 @@
 #include "pbl/services/timeline/weather_layout.h"
 #include "shell/prefs.h"
 #include "shell/system_app_ids.auto.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 #include "util/stats.h"
-#include "util/string.h"
+#include "pbl/util/string.h"
 #include "util/time/time.h"
 #include "util/units.h"
 
 #include <stdio.h>
+
+PBL_LOG_MODULE_DECLARE(service_activity, CONFIG_SERVICE_ACTIVITY_LOG_LEVEL);
 
 #define INSIGHTS_LOG_DEBUG(fmt, args...) \
         PBL_LOG_D_DBG(LOG_DOMAIN_ACTIVITY_INSIGHTS, fmt, ## args)
@@ -45,6 +47,11 @@
 
 #define NUM_COPY_VARIANTS 5
 #define VARIANT_RANDOM (-1)
+
+// The sleep summary notification only fires when the sleep exit lands within this local
+// time-of-day window ([min, max)). The timeline pin is updated regardless.
+#define SLEEP_SUMMARY_NOTIF_WAKE_MINUTE_MIN (4 * MINUTES_PER_HOUR)
+#define SLEEP_SUMMARY_NOTIF_WAKE_MINUTE_MAX (18 * MINUTES_PER_HOUR)
 
 typedef struct NotificationConfig {
   time_t notif_time;
@@ -126,6 +133,10 @@ typedef struct SleepPinState {
   int active_minutes;
   bool removed;
   bool notified;
+  // Start of the sleep-day window this state belongs to. The summary notification fires at
+  // most once per window, no matter how often the sleep bounds change within it.
+  // Note: must stay the last field so older persisted states fail to restore cleanly.
+  time_t window_utc;
 } SleepPinState;
 static SleepPinState s_sleep_pin_state;
 
@@ -311,7 +322,7 @@ static bool prv_save_state(ActivitySettingsKey key, void *val, size_t val_len) {
 static void prv_build_notification_attr_list(AttributeList *attr_list, const char *body,
                                              uint32_t icon, ActivityInsightType insight_type,
                                              ActivitySessionType activity_type) {
-  attribute_list_add_uint32(attr_list, AttributeIdIconTiny, icon);
+  attribute_list_add_resource_id(attr_list, AttributeIdIconTiny, icon);
   attribute_list_add_cstring(attr_list, AttributeIdBody, body);
   attribute_list_add_uint8(attr_list, AttributeIdBgColor, GColorOrangeARGB8);
   attribute_list_add_uint8(attr_list, AttributeIdHealthInsightType, insight_type);
@@ -675,7 +686,7 @@ T_STATIC void prv_calculate_metric_history_stats(ActivityMetric metric,
 
   kernel_free(history);
 
-  INSIGHTS_LOG_DEBUG("Metric history stats - med: %"PRIu16" mean: %"PRIu16" tot: %"PRIu8
+  INSIGHTS_LOG_DEBUG("Metric history stats - med: %"PRIu32" mean: %"PRIu32" tot: %"PRIu8
                      " cons: %"PRIu8, stats->median, stats->mean, stats->total_days,
                      stats->consecutive_days);
 }
@@ -709,7 +720,7 @@ static bool prv_validate_history_stats(const ActivityInsightMetricHistoryStats *
   // Make sure enough days have been above the target
   // (start at 1 since we don't care about today's metric)
   for (uint32_t i = 1; i < history_len; ++i) {
-    if (history[i] < target) {
+    if (history[i] < (int32_t)target) {
       INSIGHTS_LOG_DEBUG("History validation failed - not above target on day %"PRIu32
                          ": %"PRIi32, i, history[i]);
       return false;
@@ -784,7 +795,7 @@ static bool prv_reward_check_common(const ActivityInsightSettings *insight_setti
 
   int32_t cur_metric;
   activity_get_metric(metric_stats->metric, 1, &cur_metric);
-  if (cur_metric < target) {
+  if (cur_metric < (int32_t)target) {
     INSIGHTS_LOG_DEBUG("Not triggering reward - not over target: %"PRIi32,
                        cur_metric);
     return false;
@@ -1000,6 +1011,16 @@ static void prv_do_sleep_notification(time_t now_utc, time_t sleep_exit_utc,
     return;
   }
 
+  // Only notify when the sleep exit lands at a plausible local wake-up time. Skipping does
+  // not consume this window's notification, so a real morning wake-up still notifies.
+  const int exit_minute_of_day = time_util_get_minute_of_day(sleep_exit_utc);
+  if (exit_minute_of_day < SLEEP_SUMMARY_NOTIF_WAKE_MINUTE_MIN ||
+      exit_minute_of_day >= SLEEP_SUMMARY_NOTIF_WAKE_MINUTE_MAX) {
+    INSIGHTS_LOG_DEBUG("Not notifying sleep pin - exit outside wake window (%d)",
+                       exit_minute_of_day);
+    return;
+  }
+
   // Notify about the pin after a certain amount of time
   const time_t since_exited = now_utc - sleep_exit_utc;
   if (since_exited < s_sleep_summary_settings.summary.sleep.trigger_notif_seconds) {
@@ -1054,17 +1075,20 @@ static void prv_do_sleep_summary(time_t now_utc) {
     return;
   }
 
-  // If we have a new sleep_enter_utc, we must have started a new day so invalidate the
-  // old sleep pin state
-  if (sleep_enter_utc != s_sleep_pin_state.first_enter_utc
+  // The pin state is keyed to the sleep-day window: only a new window invalidates it.
+  // Bounds changes within one window (merged sessions, evening extensions) update the pin
+  // below without re-arming the notification.
+  const time_t window_utc = activity_sessions_prv_get_sleep_window_start_utc(now_utc);
+  if (window_utc != s_sleep_pin_state.window_utc
       || now_utc < s_sleep_pin_state.last_triggered_utc) {
     // Checking "now_utc < s_sleep_pin_state.last_triggered_utc" catches cases where
     // the activity_test integration test might have created a pin in the future (because it
     // mucks with the real time clock)
-    INSIGHTS_LOG_DEBUG("Starting pin for new day");
+    INSIGHTS_LOG_DEBUG("Starting pin for new sleep window");
     s_sleep_pin_state = (SleepPinState) {
       .uuid = UUID_INVALID,
       .first_enter_utc = sleep_enter_utc,
+      .window_utc = window_utc,
     };
   }
 
@@ -1082,16 +1106,18 @@ static void prv_do_sleep_summary(time_t now_utc) {
   int32_t sleep_total_seconds = 0;
   activity_get_metric(ActivityMetricSleepTotalSeconds, 1, &sleep_total_seconds);
 
-  // If this is a session we've already created a pin for, send the notification for it now if
-  // we haven't already.
-  if (sleep_exit_utc <= s_sleep_pin_state.last_triggered_utc) {
+  // If the bounds haven't changed since we last pushed the pin, send the notification for it
+  // now if we haven't already.
+  if (sleep_exit_utc <= s_sleep_pin_state.last_triggered_utc
+      && sleep_enter_utc == s_sleep_pin_state.first_enter_utc) {
     // Notify about the sleep pin
     prv_do_sleep_notification(now_utc, sleep_exit_utc, sleep_total_seconds);
     INSIGHTS_LOG_DEBUG("Not adding sleep pin - already checked session %ld", sleep_exit_utc);
     return;
   }
 
-  // Insert or update the pin
+  // Insert or update the pin. This intentionally leaves "notified" untouched: within one
+  // sleep window the notification fires at most once, however often the bounds extend.
   INSIGHTS_LOG_DEBUG("Adding sleep pin");
   prv_push_sleep_summary_pin(now_utc, sleep_exit_utc, sleep_enter_seconds, sleep_exit_seconds,
                              sleep_total_seconds, s_sleep_stats.mean,
@@ -1099,8 +1125,8 @@ static void prv_do_sleep_summary(time_t now_utc) {
 
   // Update sleep pin state
   s_sleep_pin_state.last_triggered_utc = sleep_exit_utc;
+  s_sleep_pin_state.first_enter_utc = sleep_enter_utc;
   s_sleep_pin_state.active_minutes = 0;
-  s_sleep_pin_state.notified = false;
 
   prv_save_state(ActivitySettingsKeyInsightSleepSummaryState, &s_sleep_pin_state,
                  sizeof(s_sleep_pin_state));
@@ -1129,7 +1155,7 @@ static NOINLINE void prv_do_activity_reward(time_t now_utc) {
   if (s_activity_reward_state.active_minutes <
       s_activity_reward_settings.reward.activity.trigger_active_minutes) {
     INSIGHTS_LOG_DEBUG("Not showing activity reward - have only been currently active for "
-                       "%"PRIu16" minutes out of %"PRIu8, s_activity_reward_state.active_minutes,
+                       "%"PRIu32" minutes out of %"PRIu8, s_activity_reward_state.active_minutes,
                        s_activity_reward_settings.reward.activity.trigger_active_minutes);
     return;
   }
@@ -1510,7 +1536,7 @@ static NOINLINE void prv_do_activity_summary(time_t now_utc) {
   // Make sure we're overdue for an update (either time interval or change in steps)
   const time_t next_update_time = s_activity_pin_state.next_update_time;
   ActivityScalarStore next_step_count = s_activity_pin_state.next_step_count;
-  if ((now_utc < next_update_time) && (steps < next_step_count)) {
+  if ((now_utc < next_update_time) && (steps < (int32_t)next_step_count)) {
     INSIGHTS_LOG_DEBUG("Not updating activity pin - less than next update time and next steps");
     return;
   }
@@ -2012,6 +2038,14 @@ void activity_insights_init(time_t now_utc) {
                       &s_session_pin_state.start_utc,
                       sizeof(s_session_pin_state.start_utc));
     activity_private_settings_close(file);
+  }
+
+  // A restored sleep pin state always has a valid window. If it doesn't (fresh boot, factory
+  // reset or a state layout change), treat the in-progress window as already notified so the
+  // next bounds recalculation can't re-notify for sleep the user already saw.
+  if (s_sleep_pin_state.window_utc == 0) {
+    s_sleep_pin_state.window_utc = activity_sessions_prv_get_sleep_window_start_utc(now_utc);
+    s_sleep_pin_state.notified = true;
   }
 
   INSIGHTS_LOG_DEBUG("Last sleep reward state: %ld",

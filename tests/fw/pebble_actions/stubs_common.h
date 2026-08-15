@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-﻿#pragma once
+#pragma once
 
 // These are the stubs that are common between the ancs_pebble_action and timeline_action tests
 // This huge list is mainly due to the inclusion of timeline_actions.c which handles both UI and
@@ -15,7 +15,7 @@
 #include "pbl/services/timeline/actions_endpoint.h"
 #include "pbl/services/timeline/timeline.h"
 #include "pbl/services/timeline/timeline_actions.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "stubs_action_chaining_window.h"
 #include "stubs_action_menu.h"

@@ -2,15 +2,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/qspi_flash_part_definitions.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/flash/qspi_flash.h>
+#include <pbl/drivers/flash/qspi_flash_part_definitions.h>
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
-#include "mcu/cache.h"
+#include "pbl/mcu/cache.h"
 #include "system/passert.h"
 #include "system/status_codes.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #define SEC_ADDR_TO_IDX(addr) (((addr) >> 12U) - 1U)
 
@@ -170,7 +170,7 @@ bool qspi_flash_check_whoami(QSPIFlash *dev) {
   uint32_t id = ctx->dev_id;
 
   if (id == dev->state->part->qspi_id_value) {
-    PBL_LOG_INFO("Flash is %s", dev->state->part->name);
+    PBL_LOG_DBG("Flash is %s", dev->state->part->name);
     return true;
   } else {
     PBL_LOG_ERR("Flash isn't expected %s (whoami: 0x%" PRIx32 ")",
@@ -317,7 +317,7 @@ status_t qspi_flash_security_register_is_locked(QSPIFlash *dev, uint32_t addr, b
 
   /* OPT operation are synchronous, one match means all matched. */
   portENTER_CRITICAL();
-  opt_val = HAL_QSPI_GET_OTP_LB(hflash, addr);
+  opt_val = HAL_QSPI_GET_OTP_LB(hflash);
   portEXIT_CRITICAL();
 
   if (opt_val == 0xff) {
@@ -363,6 +363,11 @@ status_t qspi_flash_write_security_register(QSPIFlash *dev, uint32_t addr, uint8
     return res;
   }
 
+  uintptr_t flush_addr = (uintptr_t)&val;
+  size_t flush_size = sizeof(val);
+  dcache_align(&flush_addr, &flush_size);
+  dcache_flush((const void *)flush_addr, flush_size);
+
   portENTER_CRITICAL();
   res = HAL_QSPI_WRITE_OTP(hflash, addr, &val, 1);
   portEXIT_CRITICAL();
@@ -378,7 +383,7 @@ const FlashSecurityRegisters *qspi_flash_security_registers_info(QSPIFlash *dev)
   return &dev->state->part->sec_registers;
 }
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
 status_t qspi_flash_lock_security_register(QSPIFlash *dev, uint32_t addr) {
   FLASH_HandleTypeDef *hflash = &dev->qspi->state->ctx.handle;
   int res;
@@ -393,4 +398,4 @@ status_t qspi_flash_lock_security_register(QSPIFlash *dev, uint32_t addr) {
 
   return S_SUCCESS;
 }
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW

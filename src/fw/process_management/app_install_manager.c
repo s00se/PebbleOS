@@ -11,7 +11,7 @@
 #include "applib/event_service_client.h"
 #include "apps/system_app_registry.h"
 #include "console/prompt.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/pebble_tasks.h"
@@ -25,13 +25,13 @@
 #include "pbl/services/blob_db/pin_db.h"
 #include "pbl/services/persist.h"
 #include "pbl/services/process_management/app_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/circular_cache.h"
-#include "util/size.h"
+#include "pbl/util/circular_cache.h"
+#include "pbl/util/size.h"
 
-#include <os/mutex.h>
-#include <util/attributes.h>
+#include <pbl/os/mutex.h>
+#include <pbl/util/attributes.h>
 
 typedef struct PACKED RecentApp {
   AppInstallId id;
@@ -321,7 +321,7 @@ static void prv_app_install_delete(AppInstallId id, Uuid *uuid, bool app_upgrade
   if (delete_cache) {
     // only log when we actually delete the cache entry. This is so we don't print out 100 logs
     // during an app cache clear
-    PBL_LOG_INFO("Deleting app with id %"PRId32"", id);
+    PBL_LOG_DBG("Deleting app with id %"PRId32"", id);
     app_cache_remove_entry(id);
   }
 }
@@ -435,7 +435,7 @@ static void app_install_launcher_task_callback(void *context) {
       // app, not during an AppDB clear.
       if (!app_upgrade) {
         persist_service_delete_file(s_install_callback_data.uuid);
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
         comm_session_app_session_capabilities_evict(s_install_callback_data.uuid);
 #endif
       }
@@ -588,7 +588,7 @@ bool app_install_id_from_app_db(AppInstallId id) {
 static GColor prv_hard_coded_color_for_3rd_party_apps(Uuid *uuid) {
 
   // Remove this from Recovery FW for code size savings.
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
 
   // this is a temporary solution to enable custom colors for 3rd-party apps
   // please replace this, once PBL-19673 landed
@@ -614,7 +614,7 @@ static GColor prv_hard_coded_color_for_3rd_party_apps(Uuid *uuid) {
 
 
 static GColor prv_valid_color_from_uuid(GColor color, Uuid *uuid) {
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   return GColorClear;
 #endif
 
@@ -806,7 +806,7 @@ static const PebbleProcessMd *prv_get_md_for_reg_entry(const AppRegistryEntry *r
 }
 
 static const PebbleProcessMd *prv_get_md_for_flash_id(AppInstallId id, bool worker) {
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   return NULL;
 #endif
 

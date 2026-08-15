@@ -4,7 +4,7 @@
 #include "pbl/services/clock.h"
 
 #include "console/prompt.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/comm_session/session.h"
@@ -16,15 +16,15 @@
 #include "shell/prefs.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 #include "pbl/services/analytics/analytics.h"
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
 #include "pbl/services/notifications/do_not_disturb.h"
 #include "pbl/services/notifications/alerts.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
@@ -34,7 +34,9 @@
 
 #include <stdio.h>
 
-// NOTE: There are RECOVERY_FW ifdefs in this file because PRF does not have
+PBL_LOG_MODULE_DEFINE(service_clock, CONFIG_SERVICE_CLOCK_LOG_LEVEL);
+
+// NOTE: There are CONFIG_RECOVERY_FW ifdefs in this file because PRF does not have
 // timezone support
 
 #define UNKNOWN_TIMEZONE_ID (-1)
@@ -43,9 +45,10 @@ static const uint16_t protocol_time_endpoint_id = 11;
 
 static RegularTimerInfo s_dst_checker;
 
-#ifndef RECOVERY_FW
-// Armed on the first timer tick, after init has settled.
+#ifndef CONFIG_RECOVERY_FW
+// Armed once the services the chime path uses are initialized.
 static bool s_hourly_chime_armed;
+#define HOURLY_CHIME_GRACE_PERIOD_SECONDS 5
 #endif
 
 static time_t prv_migrate_local_time_to_UTC(time_t local_time) {
@@ -74,7 +77,7 @@ typedef struct PACKED {
 _Static_assert(sizeof(time_t) == 4, "Sizeof time_t does not match endpoint definition");
 #endif
 
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
 static time_t prv_clock_dstrule_to_timestamp(
     bool is_end, const TimezoneInfo *tz_info, const TimezoneDSTRule *rule, int year) {
 
@@ -136,7 +139,7 @@ static time_t prv_clock_dstrule_to_timestamp(
   uxtime -= time_tm.tm_gmtoff;
   return uxtime;
 }
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 
 T_STATIC void prv_update_dstrule_timestamps_by_dstzone_id(TimezoneInfo *tz_info, time_t utc_time) {
   if (tz_info->dst_id == 0) {
@@ -145,7 +148,7 @@ T_STATIC void prv_update_dstrule_timestamps_by_dstzone_id(TimezoneInfo *tz_info,
     return;
   }
 
-#if defined(RECOVERY_FW)
+#if defined(CONFIG_RECOVERY_FW)
   return;
 #else
 
@@ -197,13 +200,13 @@ T_STATIC void prv_update_dstrule_timestamps_by_dstzone_id(TimezoneInfo *tz_info,
   tz_info->dst_start = dst_start_stamps[start_idx];
   tz_info->dst_end = dst_end_stamps[end_idx];
 
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 }
 
 static void prv_clock_get_timezone_info_from_region_id(
     int16_t region_id, time_t utc_time, TimezoneInfo *tz_info) {
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   *tz_info = (TimezoneInfo) { .dst_id = 0 };
 #else
   timezone_database_load_region_info(region_id, tz_info);
@@ -227,7 +230,7 @@ static TimezoneInfo prv_get_timezone_info_from_data(TimezoneCBData *tz_data) {
   }
 
   // Else, we couldn't find find the specified timezone.
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   TimezoneInfo tz_info = {
     .dst_id = 0,
     .timezone_id = UNKNOWN_TIMEZONE_ID,
@@ -302,13 +305,6 @@ T_STATIC void prv_update_time_info_and_generate_event(time_t *t, TimezoneInfo *t
 static void prv_handle_set_utc_and_timezone_msg(TimezoneCBData *tz_data) {
   tz_data->utc_time = ntohl(tz_data->utc_time);
   tz_data->utc_offset_min = ntohs(tz_data->utc_offset_min);
-
-  const char *region_name = tz_data->region_name;
-  if (tz_data->region_name_len == 0) {
-    region_name = "[N/A]";
-  }
-  PBL_LOG_INFO("set_timezone utc_time: %u offset: %d region_name: %s",
-          (int) tz_data->utc_time, (int) tz_data->utc_offset_min, region_name);
 
   TimezoneInfo tz_info = prv_get_timezone_info_from_data(tz_data);
   shell_prefs_set_automatic_timezone_id(tz_info.timezone_id);
@@ -391,15 +387,17 @@ void clock_protocol_msg_callback(CommSession *session, const uint8_t* data, unsi
 }
 
 // TODO: Using a regular timer is pretty gross...
+//! Runs once a minute from the regular_timer minutes list. DST transitions and
+//! the top of the hour both land on minute boundaries, so minute granularity
+//! detects them at the same instant the old per-second poll did.
 T_STATIC void prv_watch_dst(void* user) {
   const bool was_dst = (bool)user;
   const bool is_dst = time_get_isdst(rtc_get_time());
-  
-#ifndef RECOVERY_FW
-  if (!s_hourly_chime_armed) {
-    s_hourly_chime_armed = true;
-  } else if (alerts_should_vibrate_for_type(AlertOther) &&
-             (time_utc_to_local(rtc_get_time()) % SECONDS_PER_HOUR == 0)) {
+
+#ifndef CONFIG_RECOVERY_FW
+  const time_t seconds_into_hour = time_utc_to_local(rtc_get_time()) % SECONDS_PER_HOUR;
+  if (s_hourly_chime_armed && alerts_should_vibrate_for_type(AlertOther) &&
+      (seconds_into_hour < HOURLY_CHIME_GRACE_PERIOD_SECONDS)) {
     uint32_t vibe_id = vibe_score_info_get_resource_id(
         alerts_preferences_get_vibe_score_for_client(VibeClient_Hourly));
     VibeScore *score = vibe_score_create_with_resource_system(0, vibe_id);
@@ -444,11 +442,17 @@ void clock_init(void) {
     .cb = prv_watch_dst,
     .cb_data = (void*)time_get_isdst(rtc_get_time()),
   };
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   s_hourly_chime_armed = false;
 #endif
-  regular_timer_add_seconds_callback(&s_dst_checker);
+  regular_timer_add_minutes_callback(&s_dst_checker);
 }
+
+#ifndef CONFIG_RECOVERY_FW
+void clock_hourly_chime_arm(void) {
+  s_hourly_chime_armed = true;
+}
+#endif
 
 void clock_get_time_tm(struct tm* time_tm) {
   rtc_get_time_tm(time_tm);
@@ -724,7 +728,6 @@ int16_t clock_get_timezone_region_id(void) {
 void clock_set_timezone_by_region_id(uint16_t region_id) {
   TimezoneInfo tz_info;
   prv_clock_get_timezone_info_from_region_id(region_id, rtc_get_time(), &tz_info);
-  PBL_LOG_INFO("Set timezone by region id (%u)", region_id);
   prv_update_time_info_and_generate_event(NULL, &tz_info);
 }
 

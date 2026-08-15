@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "applib/data_logging.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include "process_management/pebble_process_md.h"
 
@@ -20,14 +20,14 @@
 #include "pbl/services/data_logging/dls_storage.h"
 
 #include "pbl/services/regular_timer.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include "util/legacy_checksum.h"
-#include "util/list.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/list.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 #include "clar.h"
 

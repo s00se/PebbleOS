@@ -4,14 +4,14 @@
 #include "comm/ble/gap_le_advert.h"
 #include "comm/ble/gap_le_connection.h"
 #include "pbl/services/regular_timer.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "clar.h"
 
 // Fakes
 ///////////////////////////////////////////////////////////
 
-#include "fake_GAPAPI.h"
+#include "fake_bt_driver_advert.h"
 #include "fake_new_timer.h"
 #include "fake_rtc.h"
 #include "fake_system_task.h"
@@ -30,11 +30,6 @@
 #include "stubs_passert.h"
 #include "stubs_prompt.h"
 
-void gap_le_connect_bluetopia_connection_callback(uint32_t stack_id,
-                                                  GAP_LE_Event_Data_t* event_data,
-                                                  uint32_t CallbackParameter) {
-}
-
 bool static s_is_connected_as_slave = false;
 
 bool gap_le_connect_is_connected_as_slave(void) {
@@ -51,10 +46,6 @@ void gap_le_slave_reconnect_start(void) {
 }
 
 void gatt_service_changed_server_cleanup_by_connection(GAPLEConnection *connection) {
-}
-
-int HCI_LE_Set_Advertise_Enable(unsigned int BluetoothStackID, ...) {
-  return (0);
 }
 
 void launcher_task_add_callback(void (*callback)(void *data), void *data) {
@@ -76,7 +67,7 @@ static void unscheduled_callback(GAPLEAdvertisingJobRef job,
 }
 
 void test_gap_le_advert__initialize(void) {
-  fake_GAPAPI_init();
+  fake_bt_driver_advert_init();
 
   s_unscheduled_cb_count = 0;
   s_unscheduled_job = NULL;
@@ -631,10 +622,44 @@ void test_gap_le_advert__continue_after_slave_connection(void) {
   // we should have stopped advertising for reconnection
   cl_assert_equal_b(gap_le_is_advertising_enabled(), false);
 
-  // Trigger the advertising to start up again. Since we still have an advertisement job set,
-  // it should continue.
+  // While connected as slave, the cycle timer must not re-enable advertising:
+  // the bt_driver contract does not advertise during a connection.
   regular_timer_fire_seconds(1);
+  cl_assert_equal_b(gap_le_is_advertising_enabled(), false);
+
+  // Once disconnected, advertising resumes since the advertisement job is still
+  // scheduled:
+  gap_le_advert_handle_disconnect_as_slave();
   cl_assert_equal_b(gap_le_is_advertising_enabled(), true);
+
+  free(ad);
+}
+
+// A stack restart while connected (airplane mode) never runs the disconnect
+// handler, so init() has to clear the connected state itself.
+void test_gap_le_advert__stack_restart_while_connected_resets_state(void) {
+  gap_le_advert_handle_connect_as_slave();
+  gap_le_advert_deinit();
+  gap_le_advert_init();
+
+  BLEAdData *ad = create_ad("A", NULL);
+  GAPLEAdvertisingJobTerm advert_term = {
+    .interval = GAPLEAdvertisingInterval_Short,
+    .duration_secs = 10,
+  };
+  GAPLEAdvertisingJobRef job = gap_le_advert_schedule(
+      ad, &advert_term, 1, unscheduled_callback, s_unscheduled_cb_data, 0);
+  cl_assert(job != NULL);
+  cl_assert_equal_b(gap_le_is_advertising_enabled(), true);
+
+  // The job must age and complete on schedule:
+  for (int i = 0; i < 10; ++i) {
+    cl_assert_equal_b(gap_le_is_advertising_enabled(), true);
+    regular_timer_fire_seconds(1);
+  }
+  cl_assert_equal_b(gap_le_is_advertising_enabled(), false);
+  cl_assert_equal_i(s_unscheduled_cb_count, 1);
+  cl_assert_equal_b(s_unscheduled_completed, true);
 
   free(ad);
 }

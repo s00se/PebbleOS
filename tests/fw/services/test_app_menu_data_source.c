@@ -15,8 +15,8 @@
 #include "pbl/services/app_cache.h"
 #include "pbl/services/blob_db/app_db.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "util/build_id.h"
-#include "util/size.h"
+#include "pbl/util/build_id.h"
+#include "pbl/util/size.h"
 #include "fixtures/load_test_resources.h"
 
 // access it directly just to test things out
@@ -77,6 +77,9 @@
 // Fake Includes
 ////////////////////////////////////
 #include "fake_spi_flash.h"
+
+// Test reset function for app_order_storage cached state
+extern void app_order_storage_reset_for_tests(void);
 
 const uint32_t g_num_file_resource_stores = 0;
 const FileResourceData g_file_resource_stores[] = {};
@@ -192,6 +195,10 @@ void test_app_menu_data_source__initialize(void) {
 
   pfs_init(false);
   pfs_format(false);
+
+  // Reset app_order_storage cached state - file_known_missing persists between tests
+  // and would cause app_order_read_order to return NULL even when the file exists
+  app_order_storage_reset_for_tests();
 
   app_install_manager_init();
   app_db_init();
@@ -540,12 +547,10 @@ void test_app_menu_data_source__settings_app_floats_to_top_if_absent_from_storag
     APP_ID_WATCHFACES,
     APP_ID_WORKOUT,
     // Install ID (smallest first)
+    // Note: BIG_TIME_APP_ID is excluded because it's a watchface (PROCESS_INFO_WATCH_FACE)
+    // and app_filter_callback filters out watchfaces
     MENU_LAYER_APP_ID,
-    BIG_TIME_APP_ID,
   };
-
-  _Static_assert(MENU_LAYER_APP_ID < BIG_TIME_APP_ID,
-                 "MENU_LAYER_APP_ID is unexpectedly >= BIG_TIME_APP_ID.");
 
   const uint8_t num_entries = ARRAY_LENGTH(storage_order);
   prv_write_order_to_file(storage_order, num_entries);

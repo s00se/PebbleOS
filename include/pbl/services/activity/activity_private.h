@@ -8,12 +8,12 @@
 
 #include "applib/event_service_client.h"
 #include "kernel/events.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/data_logging/data_logging_service.h"
 #include "pbl/services/settings/settings_file.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,9 +32,10 @@
 #define ACTIVITY_SESSION_UPDATE_MIN               15
 
 // Every scalar metric and setting is stored in globals and in the settings file using this
-// typedef
-typedef uint16_t ActivityScalarStore;
-#define ACTIVITY_SCALAR_MAX                       UINT16_MAX
+// typedef. Must be wide enough for daily step counts and distance in meters, which can
+// legitimately exceed UINT16_MAX (FIRM-3071).
+typedef uint32_t ActivityScalarStore;
+#define ACTIVITY_SCALAR_MAX                       UINT32_MAX
 
 // Each step average interval covers this many minutes
 #define ACTIVITY_STEP_AVERAGES_MINUTES             (MINUTES_PER_DAY / ACTIVITY_NUM_METRIC_AVERAGES)
@@ -89,7 +90,9 @@ typedef uint16_t ActivityScalarStore;
 // The version of our settings file
 // Version 1 - ActivitySettingsKeyVersion didn't exist
 // Version 2 - Changed file size from 2k to 16k
-#define ACTIVITY_SETTINGS_CURRENT_VERSION     2
+// Version 3 - ActivityScalarStore widened from uint16_t to uint32_t, changing the layout of
+//             ActivitySettingsValueHistory records and of scalar metric records
+#define ACTIVITY_SETTINGS_CURRENT_VERSION     3
 
 typedef struct {
   uint32_t utc_sec;                     // timestamp of first entry in list
@@ -121,8 +124,8 @@ typedef enum {
   ActivitySettingsKeySleepExitAtHistory,          // ActivitySettingsValueHistory
                                                   // What time the user woke up. Measured in
                                                   // minutes after midnight
-  ActivitySettingsKeySleepState,                  // uint16_t
-  ActivitySettingsKeySleepStateMinutes,           // uint16_t
+  ActivitySettingsKeySleepState,                  // ActivityScalarStore
+  ActivitySettingsKeySleepStateMinutes,           // ActivityScalarStore
   ActivitySettingsKeyStepAveragesWeekdayFirst,    // ACTIVITY_STEP_AVERAGES_PER_CHUNK * uint16_t
   ActivitySettingsKeyStepAveragesWeekdayLast =
         ActivitySettingsKeyStepAveragesWeekdayFirst + ACTIVITY_STEP_AVERAGES_KEYS_PER_DAY - 1,
@@ -154,7 +157,8 @@ typedef enum {
                                                   //         ACTIVITY_MAX_ACTIVITY_SESSIONS_COUNT]
   ActivitySettingsKeyInsightNapSessionTime,       // time_t: time we last showed the nap pin
   ActivitySettingsKeyInsightActivitySessionTime,  // time_t: time we last showed the activity pin
-  ActivitySettingsKeyLastVMC,                     // uint16_t: the VMC at the last processed minute
+  ActivitySettingsKeyLastVMC,                     // ActivityScalarStore: the VMC at the last
+                                                  // processed minute
   ActivitySettingsKeyRestingHeartRate,            // ActivitySettingsValueHistory
   ActivitySettingsKeyHeartRateZone1Minutes,
   ActivitySettingsKeyHeartRateZone2Minutes,
@@ -445,6 +449,10 @@ bool activity_test_reset(bool reset_settings, bool tracking_on,
 // Load in the stored activities from our settings file
 void activity_sessions_prv_init(SettingsFile *file, time_t utc_now);
 
+// Get the start of the sleep-day window (the ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY local-time
+// cutoff) that now_utc belongs to
+time_t activity_sessions_prv_get_sleep_window_start_utc(time_t now_utc);
+
 // Get the UTC time bounds for the current day
 void activity_sessions_prv_get_sleep_bounds_utc(time_t now_utc, time_t *enter_utc,
                                                 time_t *exit_utc);
@@ -536,3 +544,7 @@ ActivityScalarStore activity_metrics_prv_steps_per_minute(void);
 
 //! Set a metric's value. Used from BlobDB to honor requests from the phone
 void activity_metrics_prv_set_metric(ActivityMetric metric, DayInWeek day, int32_t value);
+
+//! Force the current day's value of a metric to an exact value (may decrease it). Intended for
+//! QEMU/test injection of health data.
+void activity_metrics_set_metric_exact(ActivityMetric metric, int32_t value);

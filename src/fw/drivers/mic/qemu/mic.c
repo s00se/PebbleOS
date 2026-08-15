@@ -1,17 +1,19 @@
 /* SPDX-FileCopyrightText: 2026 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/mic.h"
-#include "drivers/mic/qemu/mic_definitions.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/qemu/mic_definitions.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
 #include "pbl/services/new_timer/new_timer.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <inttypes.h>
 #include <string.h>
+
+PBL_LOG_MODULE_DEFINE(driver_mic_qemu, CONFIG_DRIVER_MIC_LOG_LEVEL);
 
 static void prv_timer_cb(void *data) {
   MicDevice *this = data;
@@ -80,7 +82,6 @@ bool mic_start(MicDevice *this, MicDataHandlerCB data_handler, void *context,
     return false;
   }
 
-  PBL_LOG_INFO("QEMU mic stub started (period=%" PRIu32 "ms)", period_ms);
   return true;
 }
 

@@ -6,22 +6,22 @@
 #include "pbl/services/protobuf_log/protobuf_log_util.h"
 
 #include "applib/data_logging.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "mfg/mfg_serials.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "pbl/services/data_logging/data_logging_service.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/version.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 #include "util/time/time.h"
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #include <string.h>
 
@@ -30,6 +30,8 @@
 #include "nanopb/event.pb.h"
 #include "nanopb/measurements.pb.h"
 #include "nanopb/payload.pb.h"
+
+PBL_LOG_MODULE_DEFINE(service_protobuf_log, CONFIG_SERVICE_PROTOBUF_LOG_LOG_LEVEL);
 
 #define PROTOBUF_LOG_DEBUG(fmt, args...) \
             PBL_LOG_D_DBG(LOG_DOMAIN_PROTOBUF, fmt, ## args)
@@ -170,9 +172,6 @@ static bool prv_populate_payload(ProtobufLogConfig *config, size_t buffer_len, u
     PBL_LOG_ERR("Error encoding payload");
   }
 
-  // PBL-43622: Will revert later
-  PBL_LOG_INFO("Logged protobuf payload type: %d, utc:%"PRIu32, config->type,
-          payload.send_time_utc);
   return success;
 }
 

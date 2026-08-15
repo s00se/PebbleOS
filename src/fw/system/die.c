@@ -1,10 +1,10 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/vibe.h"
+#include <pbl/drivers/vibe.h>
 #include "kernel/core_dump.h"
-#include "kernel/logging_private.h"
-#include "kernel/pulse_logging.h"
+#include "logging/logging_private.h"
+#include "logging/pulse_logging.h"
 #include "system/bootbits.h"
 #include "system/passert.h"
 #include "system/reboot_reason.h"
@@ -12,16 +12,16 @@
 
 #include <cmsis_core.h>
 
-#if defined(NO_WATCHDOG)
+#if defined(CONFIG_NO_WATCHDOG)
 #include "FreeRTOS.h"
 #endif
 
 void prepare_for_software_failure(void) {
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
   pulse_logging_log_buffer_flush();
 #endif
 
-#ifndef MANUFACTURING_FW
+#ifndef CONFIG_MFG
   boot_bit_set(BOOT_BIT_SOFTWARE_FAILURE_OCCURRED);
 #endif
 }
@@ -29,7 +29,7 @@ void prepare_for_software_failure(void) {
 NORETURN reset_due_to_software_failure(void) {
   prepare_for_software_failure();
 
-#if defined(NO_WATCHDOG)
+#if defined(CONFIG_NO_WATCHDOG)
   // Don't reset right away, leave it in a state we can inspect
 
   __disable_irq();

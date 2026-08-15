@@ -6,23 +6,24 @@
 
 #include <math.h>
 
-#include "drivers/pmic.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/pmic.h>
+#include <pbl/drivers/battery.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/battery.h"
-#include "drivers/exti.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/periph_config.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/exti.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
 #include "kernel/events.h"
 #include "kernel/util/delay.h"
 #include "kernel/util/sleep.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
+
+PBL_LOG_MODULE_DEFINE(driver_pmic_npm1300, CONFIG_DRIVER_PMIC_LOG_LEVEL);
 
 #define CHARGER_DEBOUNCE_MS 400
 #define ADC_POLL_DELAY_MS   5     // Delay between ADC poll iterations to reduce I2C traffic
@@ -177,10 +178,6 @@ static uint16_t prv_ntc_threshold_code(uint8_t celsius) {
 void battery_init(void) {
 }
 
-uint32_t pmic_get_last_reset_reason(void) {
-  return 0;
-}
-
 static bool prv_read_register(uint16_t register_address, uint8_t *result) {
   i2c_use(I2C_NPM1300);
   uint8_t regad[2] = { register_address >> 8, register_address & 0xFF };
@@ -281,7 +278,7 @@ bool pmic_init(void) {
   s_debounce_charger_timer = new_timer_create();
 
   // TODO(NPM1300): This needs to be configurable at board level
-#ifdef CONFIG_BOARD_FAMILY_ASTERIX
+#ifdef CONFIG_BOARD_ASTERIX
   // Anomaly 27: set BUCK1/BUCK2 to SW control with workaround
   ok &= prv_buck_set_sw_ctrl(PmicRegisters_BUCK_BUCK1NORMVOUT,
                               PmicRegisters_BUCK_BUCK1VOUTSTATUS,
@@ -308,7 +305,7 @@ bool pmic_init(void) {
 #endif
 
 // FIXME(OBELIX,GETAFIX): Needs to be configurable at board level
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
   // Anomaly 27: set BUCK1 to SW control with workaround, then disable it
   ok &= prv_buck_set_sw_ctrl(PmicRegisters_BUCK_BUCK1NORMVOUT,
                               PmicRegisters_BUCK_BUCK1VOUTSTATUS,
@@ -346,17 +343,17 @@ bool pmic_init(void) {
   ok &= prv_write_register(PmicRegisters_BCHARGER_TASKRELEASEERROR, 1);
 
   // FIXME: this needs to be configurable at board level
-#ifdef CONFIG_BOARD_FAMILY_OBELIX
+#ifdef CONFIG_BOARD_OBELIX
   ok &= prv_write_register(PmicRegisters_ADC_ADCNTCRSEL, PmicRegisters_ADC_ADCNTCRSEL__ADCNTCRSEL_10K);
 
   ok &= prv_write_register(PmicRegisters_BCHARGER_BCHGVTERM, PmicRegisters_BCHARGER_BCHGVTERM__BCHGVTERMNORM_4V35);
   ok &= prv_write_register(PmicRegisters_BCHARGER_BCHGVTERMR, PmicRegisters_BCHARGER_BCHGVTERMR__BCHGVTERMREDUCED_4V00);
-#elif defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#elif defined(CONFIG_BOARD_GETAFIX)
   ok &= prv_write_register(PmicRegisters_ADC_ADCNTCRSEL, PmicRegisters_ADC_ADCNTCRSEL__ADCNTCRSEL_10K);
 
   ok &= prv_write_register(PmicRegisters_BCHARGER_BCHGVTERM, PmicRegisters_BCHARGER_BCHGVTERM__BCHGVTERMNORM_4V45);
   ok &= prv_write_register(PmicRegisters_BCHARGER_BCHGVTERMR, PmicRegisters_BCHARGER_BCHGVTERMR__BCHGVTERMREDUCED_4V00);
-#elif defined(CONFIG_BOARD_FAMILY_ASTERIX)
+#elif defined(CONFIG_BOARD_ASTERIX)
   ok &= prv_write_register(PmicRegisters_ADC_ADCNTCRSEL, PmicRegisters_ADC_ADCNTCRSEL__ADCNTCRSEL_10K);
 
   ok &= prv_write_register(PmicRegisters_BCHARGER_BCHGVTERM, PmicRegisters_BCHARGER_BCHGVTERM__BCHGVTERMNORM_4V20);
@@ -370,12 +367,12 @@ bool pmic_init(void) {
   }
 
   // FIXME: this needs to be configurable at board level
-#ifdef CONFIG_BOARD_FAMILY_OBELIX
+#ifdef CONFIG_BOARD_OBELIX
   //3.3V @ LDO2
   ok &= prv_write_register(PmicRegisters_LDSW_LDSW2LDOSEL, PmicRegisters_LDSW_LDSW2LDOSEL__LDO_MODE);
   ok &= prv_write_register(PmicRegisters_LDSW_LDSW2VOUTSEL, PmicRegisters_LDSW_LDSW2VOUTSEL__3V3);
   ok &= prv_write_register(PmicRegisters_LDSW_TASKLDSW2CLR, 1);
-#elif defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#elif defined(CONFIG_BOARD_GETAFIX)
   // LDSW2 (3.3V for PDM)
   ok &= prv_write_register(PmicRegisters_LDSW_LDSW2LDOSEL, PmicRegisters_LDSW_LDSW2LDOSEL__LDSW_MODE);
   ok &= prv_write_register(PmicRegisters_LDSW_TASKLDSW2CLR, 1);
@@ -590,8 +587,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (msb << NPM1300_ADC_MSB_SHIFT) |
-        ((lsb & PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_POS);
+        ((lsb >> PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_MSK);
 
   constants->v_mv = (int32_t)(raw * NPM1300_ADC_VFS_VBAT_MV) / NPM1300_BCHARGER_ADC_BITS_RESOLUTION;
 
@@ -619,8 +616,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (msb << NPM1300_ADC_MSB_SHIFT) |
-        ((lsb & PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_POS);
+        ((lsb >> PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_MSK);
 
   constants->i_ua = ((int32_t)raw * full_scale_ua) / NPM1300_BCHARGER_ADC_BITS_RESOLUTION;
 
@@ -648,8 +645,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (lsb << NPM1300_ADC_MSB_SHIFT) |
-        ((msb & PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_POS);
+        ((msb >> PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_MSK);
 
   // Ref: PS v1.2 Section 7.1.4: Battery temperature (Kelvin)
   float log_result = logf((1024.f / (float)raw) - 1.0f);

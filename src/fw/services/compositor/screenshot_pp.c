@@ -10,9 +10,11 @@
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/comm_session/session_send_buffer.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
-#include "util/attributes.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/attributes.h"
 #include "util/net.h"
+
+PBL_LOG_MODULE_DECLARE(service_compositor, CONFIG_SERVICE_COMPOSITOR_LOG_LEVEL);
 
 static const uint16_t SCREENSHOT_ENDPOINT_ID = 8000;
 static bool s_screenshot_in_progress = false;

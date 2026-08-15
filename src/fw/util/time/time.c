@@ -1,10 +1,10 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "syscall/syscall_internal.h"
 #include "time.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include <string.h>
 
 #include "FreeRTOS.h"

@@ -4,10 +4,10 @@
 #include "animation_timing.h"
 #include "animation_interpolate.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math_fixed.h"
-#include "util/size.h"
+#include "pbl/util/math_fixed.h"
+#include "pbl/util/size.h"
 
 //! @file animation_timing.c
 

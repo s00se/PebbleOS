@@ -3,14 +3,14 @@
 
 #pragma once
 
-#include "logging.h"
+#include <pbl/logging/logging.h>
 
-#include <util/attributes.h>
-#include <util/likely.h>
+#include <pbl/util/attributes.h>
+#include <pbl/util/likely.h>
 
 
-#ifdef PBL_LOGS_HASHED
-  #include <logging/log_hashing.h>
+#ifdef CONFIG_LOG_HASHED
+  #include <pbl/logging/log_hashing.h>
 
 NORETURN passert_failed_hashed(uint32_t packed_loghash, ...);
 
@@ -110,7 +110,7 @@ void passert_check_not_task(enum PebbleTask unexpected_task);
 
 // extern void command_dump_malloc(void);
 
-#ifdef PBL_LOGS_HASHED
+#ifdef CONFIG_LOG_HASHED
 
   #define PBL_CROAK(msg, ...) \
     do { \
@@ -118,12 +118,12 @@ void passert_check_not_task(enum PebbleTask unexpected_task);
                    ## __VA_ARGS__); \
     } while (0)
 
-#else // PBL_LOGS_HASHED
+#else // CONFIG_LOG_HASHED
 
   #define PBL_CROAK(fmt, args...) \
       passert_failed(__FILE_NAME__, __LINE__, "*** CROAK: " fmt, ## args)
 
-#endif // PBL_LOGS_HASHED
+#endif // CONFIG_LOG_HASHED
 
 typedef struct Heap Heap;
 

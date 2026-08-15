@@ -12,39 +12,35 @@
 #include "console/dbgserial_input.h"
 #include "console/pulse.h"
 
-#include "drivers/clocksource.h"
-#include "drivers/rtc.h"
-#include "drivers/periph_config.h"
-#include "drivers/flash.h"
-#include "drivers/debounced_button.h"
+#include <pbl/drivers/clocksource.h>
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/debounced_button.h>
 
-#include "drivers/accel.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
-#include "drivers/battery.h"
-#include "drivers/display/display.h"
-#include "drivers/gpio.h"
-#include "drivers/hrm.h"
-#include "drivers/mag.h"
-#include "drivers/mic.h"
-#include "drivers/otp.h"
-#include "drivers/pmic.h"
-#include "drivers/pressure.h"
-#include "drivers/pwr.h"
-#include "drivers/spi.h"
-#include "drivers/task_watchdog.h"
-#include "drivers/temperature.h"
-#include "drivers/touch/touch_sensor.h"
-#include "drivers/vibe.h"
-#include "drivers/voltage_monitor.h"
-#include "drivers/watchdog.h"
-#include "drivers/sf32lb52/rc10k.h"
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/display/display.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/hrm.h>
+#include <pbl/drivers/mag.h>
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/otp.h>
+#include <pbl/drivers/pmic.h>
+#include <pbl/drivers/pressure.h>
+#include <pbl/drivers/task_watchdog.h>
+#include <pbl/drivers/temperature.h>
+#include <pbl/drivers/touch/touch_sensor.h>
+#include <pbl/drivers/vibe.h>
+#include <pbl/drivers/voltage_monitor.h>
+#include <pbl/drivers/watchdog.h>
+#include <pbl/drivers/sf32lb52/rc10k.h>
 
 #include "resource/resource.h"
 #include "resource/system_resource.h"
 
 #include "kernel/coredump_extra_regions.h"
-#include "kernel/util/stop.h"
 #include "kernel/util/task_init.h"
 #include "kernel/util/sleep.h"
 #include "kernel/events.h"
@@ -52,7 +48,7 @@
 #include "kernel/fault_handling.h"
 #include "kernel/memory_layout.h"
 #include "kernel/panic.h"
-#include "kernel/pulse_logging.h"
+#include "logging/pulse_logging.h"
 #include "pbl/services/services.h"
 #include "pbl/services/boot_splash.h"
 #include "pbl/services/clock.h"
@@ -80,7 +76,7 @@
 
 #include "console/serial_console.h"
 #include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "system/reset.h"
 
@@ -104,7 +100,7 @@ void soc_early_init(void);
 const int __attribute__((used)) uxTopUsedPriority = configMAX_PRIORITIES - 1;
 
 static TimerID s_lowpower_timer = TIMER_INVALID_ID;
-#ifndef MANUFACTURING_FW
+#ifndef CONFIG_MFG
 static TimerID s_uptime_timer = TIMER_INVALID_ID;
 #endif
 static void main_task(void *parameter);
@@ -112,9 +108,9 @@ static void main_task(void *parameter);
 static void print_splash_screen(void)
 {
 
-#if defined(MANUFACTURING_FW)
+#if defined(CONFIG_MFG)
   PBL_LOG_ALWAYS("PebbleOS - MANUFACTURING MODE");
-#elif defined(RECOVERY_FW)
+#elif defined(CONFIG_RECOVERY_FW)
   PBL_LOG_ALWAYS("PebbleOS - RECOVERY MODE");
 #else
   PBL_LOG_ALWAYS("PebbleOS");
@@ -124,40 +120,9 @@ static void print_splash_screen(void)
           (TINTIN_METADATA.is_dual_slot && !TINTIN_METADATA.is_recovery_firmware) ?
             (TINTIN_METADATA.is_slot_0 ? " (slot0)" : " (slot1)") :
             "");
-  PBL_LOG_ALWAYS("(c) 2013-2025 The PebbleOS contributors");
+  PBL_LOG_ALWAYS("(c) 2013-2026 The PebbleOS contributors");
   PBL_LOG_ALWAYS(" ");
 }
-
-#ifdef DUMP_GPIO_CFG_STATE
-static void dump_gpio_configuration_state(void) {
-  char name[2] = { 0 };
-  name[0] = 'A'; // GPIO Port A
-
-  GPIO_TypeDef *gpio_pin;
-
-  for (uint32_t gpio_addr = (uint32_t)GPIOA; gpio_addr <= (uint32_t)GPIOI;
-       gpio_addr += 0x400) {
-    gpio_pin = (GPIO_TypeDef *)gpio_addr;
-
-    gpio_use(gpio_pin);
-    uint32_t mode = gpio_pin->MODER;
-    gpio_release(gpio_pin);
-
-    uint16_t pin_cfg_mask = 0;
-    char buf[80];
-    for (int pin = 0; pin < 16; pin++) {
-      if ((mode & GPIO_MODER_MODER0) != GPIO_Mode_AN) {
-        pin_cfg_mask |= (0x1 << pin);
-      }
-      mode >>= 2;
-    }
-
-    dbgserial_putstr_fmt(buf, sizeof(buf), "Non Analog P%s cfg: 0x%"PRIx16,
-      name, (int)pin_cfg_mask);
-    name[0]++;
-  }
-}
-#endif /* DUMP_GPIO_CFG_STATE */
 
 int main(void) {
   soc_early_init();
@@ -179,7 +144,7 @@ int main(void) {
 
   rtc_init();
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
   boot_bit_clear(BOOT_BIT_RECOVERY_START_IN_PROGRESS);
 #endif
 
@@ -199,13 +164,6 @@ int main(void) {
   };
 
   pebble_task_create(PebbleTask_KernelMain, &task_params, NULL);
-
-  // Always start the firmware in a state where we explicitly do not allow stop mode.
-  // FIXME: This seems overly cautious to me, we shouldn't have to do this.
-  stop_mode_disable(InhibitorMain);
-
-  // Turn off power to internal flash when in stop mode
-  pwr_flash_power_down_stop_mode(true /* power_down */);
 
   vTaskStartScheduler();
   for(;;);
@@ -283,7 +241,7 @@ static void clear_reset_loop_detection_bits(void) {
   boot_bit_clear(BOOT_BIT_RESET_LOOP_DETECT_THREE);
 }
 
-#ifndef MANUFACTURING_FW
+#ifndef CONFIG_MFG
 static void uptime_callback(void* data) {
   PBL_LOG_VERBOSE("Uptime reached 15 minutes, set stable bit.");
   new_timer_delete(s_uptime_timer);
@@ -302,7 +260,7 @@ static NOINLINE void prv_main_task_init(void) {
   static McuRebootReason s_mcu_reboot_reason;
   s_mcu_reboot_reason = watchdog_clear_reset_flag();
 
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
   pulse_init();
   pulse_logging_init();
 #endif
@@ -350,7 +308,7 @@ static NOINLINE void prv_main_task_init(void) {
   mfg_write_bigboard_serial_number();
 #endif
 
-#if defined(MANUFACTURING_FW)
+#if defined(CONFIG_MFG)
   mfg_info_update_constant_data();
 #endif
 
@@ -363,7 +321,7 @@ static NOINLINE void prv_main_task_init(void) {
   // Do this early before things can screw ith it.
   check_prf_update();
 
-#if defined(CONFIG_PBLBOOT) && defined(RECOVERY_FW) && !defined(MANUFACTURING_FW)
+#if defined(CONFIG_PBLBOOT) && defined(CONFIG_RECOVERY_FW) && !defined(CONFIG_MFG)
   // Invalidate slot0/1 when booting PRF, so we force main firmware re-install
   firmware_storage_invalidate_firmware_slot(0);
   firmware_storage_invalidate_firmware_slot(1);
@@ -406,8 +364,6 @@ static NOINLINE void prv_main_task_init(void) {
 
   task_watchdog_mask_set(PebbleTask_KernelMain);
 
-  stop_mode_enable(InhibitorMain);
-
   // Leave the board with stop and sleep mode debugging enabled for at least 10
   // seconds to give OpenOCD time to start and still able to connect when it is
   // ready to flash in the new image via JTAG
@@ -415,7 +371,7 @@ static NOINLINE void prv_main_task_init(void) {
   new_timer_start(s_lowpower_timer,
                   10 * 1000, prv_low_power_debug_config_callback, NULL, 0 /*flags*/);
 
-#ifndef MANUFACTURING_FW
+#ifndef CONFIG_MFG
   s_uptime_timer = new_timer_create();
   new_timer_start(s_uptime_timer, 15 * 60 * 1000, uptime_callback, NULL, 0 /*flags*/);
 #else
@@ -425,11 +381,6 @@ static NOINLINE void prv_main_task_init(void) {
   // Initialize button driver at the last moment to prevent "system on" button press from
   // entering the kernel event queue.
   debounced_button_init();
-
-#ifdef DUMP_GPIO_CFG_STATE
-  // at this point everything should be configured!
-  dump_gpio_configuration_state();
-#endif
 
   task_watchdog_resume();
 }

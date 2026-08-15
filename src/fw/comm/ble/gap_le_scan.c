@@ -7,12 +7,12 @@
 #include "gap_le_scan.h"
 #include "kernel/events.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/circular_buffer.h"
-#include "util/likely.h"
+#include "pbl/util/circular_buffer.h"
+#include "pbl/util/likely.h"
 
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
 
 #include <string.h>
 
@@ -74,10 +74,6 @@ bool gap_le_stop_scan(void) {
       kernel_free(s_reports_buffer);
       s_reports_buffer = NULL;
       s_is_scanning = false;
-
-      if (s_dropped_reports) {
-        PBL_LOG_INFO("LE Scan -- Dropped reports: %" PRIu32, s_dropped_reports);
-      }
     }
   }
   bt_unlock();

@@ -3,15 +3,17 @@
 
 #include "pbl/services/filesystem/flash_translation.h"
 
-#include "drivers/flash.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "flash_region/filesystem_regions.h"
 #include "flash_region/flash_region.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+
+PBL_LOG_MODULE_DECLARE(service_filesystem, CONFIG_SERVICE_FILESYSTEM_LOG_LEVEL);
 
 //! Flash translation operation
 typedef enum {
@@ -86,9 +88,10 @@ static uint8_t prv_ftl_get_layout_version(void) {
 
 void ftl_add_region(uint32_t region_start, uint32_t region_end, bool erase_new_region) {
   // check if this region equals the next region, if so, then add next region
-  if ((region_start == s_region_list[s_next_region_idx].start) &&
-      (region_end == s_region_list[s_next_region_idx].end) &&
-      (s_next_region_idx < TOTAL_NUM_FLASH_REGIONS)) {
+  // (bounds check first: the array reads below are only valid when idx is in range)
+  if ((s_next_region_idx < TOTAL_NUM_FLASH_REGIONS) &&
+      (region_start == s_region_list[s_next_region_idx].start) &&
+      (region_end == s_region_list[s_next_region_idx].end)) {
     s_next_region_idx++;
   // failure, should never happen
   } else {
@@ -111,7 +114,7 @@ void ftl_add_region(uint32_t region_start, uint32_t region_end, bool erase_new_r
 
 void ftl_populate_region_list(void) {
   uint8_t flash_layout_version = prv_ftl_get_layout_version();
-  PBL_LOG_INFO("Filesystem: Old Flash Layout Version: %u", flash_layout_version);
+  PBL_LOG_DBG("Flash Layout Version: %u", flash_layout_version);
 
   for (unsigned int i = s_next_region_idx; i < flash_layout_version; i++) {
     ftl_add_region(s_region_list[i].start, s_region_list[i].end, false);

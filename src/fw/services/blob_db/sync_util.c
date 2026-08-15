@@ -4,7 +4,9 @@
 #include "pbl/services/blob_db/sync_util.h"
 
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 // Caution: CommonTimelineItemHeader .flags & .status are stored inverted and not auto-restored
 // by the underlying db API. If .flags or .status is used from a CommonTimelineItemHeader below,

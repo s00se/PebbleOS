@@ -10,7 +10,7 @@
 #include "popups/notifications/notification_window_private.h"
 #include "resource/timeline_resource_ids.auto.h"
 #include "pbl/services/timeline/notification_layout.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 
 #include <stdio.h>
 
@@ -113,6 +113,10 @@ bool alerts_preferences_get_notification_alternative_design(void) {
 
 DndNotificationMode alerts_preferences_dnd_get_show_notifications(void) {
   return DndNotificationModeShow;
+}
+
+bool alerts_preferences_dnd_get_auto_dismiss(void) {
+  return false;
 }
 
 bool alerts_preferences_get_notification_vibe_delay(void) {

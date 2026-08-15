@@ -1,16 +1,16 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/battery.h"
-#include "drivers/qemu/qemu_serial.h"
-#include "drivers/qemu/qemu_settings.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/qemu/qemu_serial.h>
+#include <pbl/drivers/qemu/qemu_settings.h>
 
 #include "system/passert.h"
 #include "pbl/services/battery/battery_state.h"
 #include "pbl/services/battery/battery_curve.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
 
 static uint16_t s_battery_mv = 4000;
@@ -24,6 +24,18 @@ void battery_init(void) {
 // TODO: update whoever uses this function
 int battery_get_millivolts(void) {
   return s_battery_mv;
+}
+
+int battery_get_constants(BatteryConstants *constants) {
+  constants->v_mv = s_battery_mv;
+  constants->i_ua = 100;
+  constants->t_mc = 25000;
+  return 0;
+}
+
+int battery_charge_status_get(BatteryChargeStatus *status) {
+  *status = BatteryChargeStatusUnknown;
+  return 0;
 }
 
 bool battery_charge_controller_thinks_we_are_charging_impl(void) {

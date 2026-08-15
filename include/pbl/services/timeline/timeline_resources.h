@@ -5,9 +5,9 @@
 
 #include "applib/graphics/gtypes.h"
 #include "applib/graphics/gdraw_command_image.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
 #include "resource/timeline_resource_ids.auto.h"
 #else
 typedef uint32_t TimelineResourceId;
@@ -88,7 +88,7 @@ bool timeline_resources_get_id_system(TimelineResourceId timeline_id, TimelineRe
 //! @param timeline_res pointer to TimelineResourceInfo which contains the timeline resource ID and
 //! corresponding app UUID
 //! @param size the TimelineResourceSize requested
-//! @param resource_id outparam pointer to AppResourceIdInfo containing the ID and
+//! @param res_info_out outparam pointer to AppResourceIdInfo containing the ID and
 //! ResAppNum for the requested timeline resource (both 0 if the resource could not be located)
 void timeline_resources_get_id(const TimelineResourceInfo *timeline_res, TimelineResourceSize size,
                                AppResourceInfo *res_info_out);

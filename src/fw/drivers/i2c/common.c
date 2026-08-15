@@ -1,31 +1,32 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/i2c.h"
-#include "definitions.h"
-#include "hal.h"
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/i2c/definitions.h>
+#include <pbl/drivers/i2c/hal.h>
 
 #include "board/board.h"
 #include "debug/power_tracking.h"
-#include "drivers/gpio.h"
-#include "drivers/periph_config.h"
-#include "drivers/rtc.h"
+#include "pbl/services/analytics/analytics.h"
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/rtc.h>
 #include "FreeRTOS.h"
 #include "kernel/pbl_malloc.h"
-#include "os/tick.h"
+#include "pbl/os/tick.h"
 #include "kernel/util/sleep.h"
-#include "kernel/util/stop.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "semphr.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #ifdef CONFIG_PMIC
-#include "drivers/pmic.h"
+#include <pbl/drivers/pmic.h>
 #endif
 
 #include <inttypes.h>
+
+PBL_LOG_MODULE_DEFINE(driver_i2c, CONFIG_DRIVER_I2C_LOG_LEVEL);
 
 #define I2C_ERROR_TIMEOUT_MS  (1000)
 #define I2C_TIMEOUT_ATTEMPTS_MAX (2 * 1000 * 1000)
@@ -242,6 +243,7 @@ static bool prv_do_transfer_locked(I2CBus *bus, I2CTransferDirection direction, 
           (bus->state->transfer_event == I2CTransferEvent_Error)) {
         if (bus->state->transfer_event == I2CTransferEvent_Error) {
           PBL_LOG_ERR("I2C Error on bus %s", bus->name);
+          PBL_ANALYTICS_ADD(i2c_transfer_error_count, 1);
         }
         complete = true;
         result = (bus->state->transfer_event == I2CTransferEvent_TransferComplete);
@@ -270,6 +272,7 @@ static bool prv_do_transfer_locked(I2CBus *bus, I2CTransferDirection direction, 
       i2c_hal_abort_transfer(bus);
       complete = true;
       PBL_LOG_ERR("Transfer timed out on bus %s", bus->name);
+      PBL_ANALYTICS_ADD(i2c_transfer_error_count, 1);
       break;
     }
   } while (!complete);
@@ -293,12 +296,10 @@ static bool prv_do_transfer(I2CBus *bus, I2CTransferDirection direction, uint16_
                             uint8_t register_address, uint32_t size, uint8_t *data,
                             I2CTransferType type) {
   mutex_lock(bus->state->bus_mutex);
-  stop_mode_disable(bus->stop_mode_inhibitor);
 
   bool result = prv_do_transfer_locked(bus, direction, device_address, register_address, size,
                                        data, type);
 
-  stop_mode_enable(bus->stop_mode_inhibitor);
   mutex_unlock(bus->state->bus_mutex);
 
   return result;
@@ -381,7 +382,6 @@ bool i2c_write_read_block(I2CSlavePort *slave, uint32_t write_size, const uint8_
 
   // Take control of bus; only one task may use bus at a time
   mutex_lock(bus->state->bus_mutex);
-  stop_mode_disable(bus->stop_mode_inhibitor);
 
   // Perform write transfer
   bool result = prv_do_transfer_locked(bus, Write, slave->address, 0, write_size,
@@ -393,7 +393,6 @@ bool i2c_write_read_block(I2CSlavePort *slave, uint32_t write_size, const uint8_
                                     read_buffer, NoRegisterAddress);
   }
 
-  stop_mode_enable(bus->stop_mode_inhibitor);
   mutex_unlock(bus->state->bus_mutex);
 
   if (!result) {

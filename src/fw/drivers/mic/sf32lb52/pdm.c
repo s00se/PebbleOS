@@ -1,25 +1,27 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/mic.h"
-#include "drivers/pmic/npm1300.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/pmic/npm1300.h>
 #include "board/board.h"
 #include "kernel/kernel_heap.h"
 #include "kernel/pbl_malloc.h"
-#include "mcu/cache.h"
-#include "system/logging.h"
-#include "os/mutex.h"
+#include "pbl/mcu/cache.h"
+#include <pbl/logging/logging.h>
+#include "pbl/os/mutex.h"
 #include "system/passert.h"
-#include "util/circular_buffer.h"
-#include "util/heap.h"
+#include "pbl/util/circular_buffer.h"
+#include "pbl/util/heap.h"
 #include "kernel/util/sleep.h"
-#include "kernel/util/stop.h"
-#include "pdm_definitions.h"
+#include "pbl/soc/sf32lb/sleep.h"
+#include <pbl/drivers/mic/sf32lb52/pdm_definitions.h>
 #include "pbl/services/system_task.h"
 #include "FreeRTOS.h"
 
+PBL_LOG_MODULE_DEFINE(driver_mic_sf32lb, CONFIG_DRIVER_MIC_LOG_LEVEL);
+
 // HACK alert, we need proper regulator abstraction
-#if defined(CONFIG_BOARD_FAMILY_OBELIX) || defined(CONFIG_BOARD_FAMILY_GETAFIX)
+#if defined(CONFIG_BOARD_OBELIX) || defined(CONFIG_BOARD_GETAFIX)
 #define PDM_POWER_NPM1300_LDO2 1
 #endif
 
@@ -257,9 +259,12 @@ static void prv_dma_data_processing(uint8_t* data, uint16_t size)
   if (available_data >= frame_size_bytes  && !s_state->main_pending) {
     s_state->main_pending = true;
     
-    // Dispatch to system task instead of kernel event queue (matches asterix behavior)
+    // Dispatch to system task instead of kernel event queue (matches asterix behavior).
+    // A drop is retried on the next PDM buffer event; losing samples beats
+    // resetting the system over a full queue.
     bool should_context_switch = false;
-    if (!system_task_add_callback_from_isr(prv_dispatch_samples_system_task, NULL, &should_context_switch)) {
+    if (!system_task_add_callback_from_isr_droppable(prv_dispatch_samples_system_task, NULL,
+                                                     &should_context_switch)) {
       s_state->main_pending = false;
     }
   }
@@ -364,8 +369,8 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
   // Set is_running to true BEFORE starting PDM, since the event handler will be called immediately
   state->is_running = true;
 
-  // Prevent CPU from entering stop mode during audio capture
-  stop_mode_disable(InhibitorMic);
+  // Prevent CPU from entering deep sleep during audio capture
+  soc_sf32lb_sleep_block(SOC_SF32LB_DEEPWFI);
 
   // Start PDM capture
   if (!prv_start_pdm_capture(this)) {
@@ -379,7 +384,7 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
     state->raw_dma_buffer = NULL;
     hpdm->pRxBuffPtr = NULL;
 
-    stop_mode_enable(InhibitorMic);
+    soc_sf32lb_sleep_release(SOC_SF32LB_DEEPWFI);
     state->is_running = false;  // Reset on failure
 #if PDM_POWER_NPM1300_LDO2
   (void)NPM1300_OPS.ldo2_set_enabled(false);
@@ -432,8 +437,8 @@ void mic_stop(const MicDevice *this) {
   (void)NPM1300_OPS.ldo2_set_enabled(false);
 #endif
 
-  // Allow CPU to enter stop mode again
-  stop_mode_enable(InhibitorMic);
+  // Allow CPU to enter deep sleep again
+  soc_sf32lb_sleep_release(SOC_SF32LB_DEEPWFI);
 
   mutex_unlock_recursive(state->mutex);
 }

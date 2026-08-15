@@ -8,14 +8,16 @@
 #include "pbl/services/phone_call.h"
 #include "pbl/services/phone_call_util.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+PBL_LOG_MODULE_DEFINE(service_phone_pp, CONFIG_SERVICE_PHONE_PP_LOG_LEVEL);
 
 #define CALLER_BUFFER_LENGTH 32
 

@@ -6,7 +6,7 @@
 #include "accel_service.h"
 #include "event_service_client.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 typedef struct AccelServiceState {
   // Configuration for our data callback subscription to the accel manager
@@ -27,9 +27,7 @@ typedef struct AccelServiceState {
   EventServiceInfo accel_shake_info;
   EventServiceInfo accel_double_tap_info;
 
-#if LOG_DOMAIN_ACCEL
   uint64_t prev_timestamp_ms;
-#endif
 } AccelServiceState;
 
 //! Initialize an existing state object

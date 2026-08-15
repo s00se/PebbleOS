@@ -4,7 +4,7 @@
 #pragma once
 
 #include "applib/event_service_client.h"
-#include "kernel/logging_private.h"
+#include "logging/logging_private.h"
 #include "applib/accel_service_private.h"
 #include "applib/compass_service_private.h"
 #include "applib/plugin_service_private.h"
@@ -18,7 +18,7 @@
 #include "applib/health_service_private.h"
 #include "applib/tick_timer_service_private.h"
 #include "applib/tick_timer_service.h"
-#include "util/heap.h"
+#include "pbl/util/heap.h"
 
 #include <stdbool.h>
 

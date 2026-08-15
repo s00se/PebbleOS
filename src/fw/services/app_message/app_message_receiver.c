@@ -9,10 +9,12 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/comm_session/session_receive_router.h"
 #include "pbl/services/app_inbox_service.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 
 #include <stdint.h>
+
+PBL_LOG_MODULE_DECLARE(service_app_message, CONFIG_SERVICE_APP_MESSAGE_LOG_LEVEL);
 
 extern const ReceiverImplementation g_default_kernel_receiver_implementation;
 extern const ReceiverImplementation g_app_message_receiver_implementation;

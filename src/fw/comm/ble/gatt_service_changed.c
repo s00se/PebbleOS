@@ -11,13 +11,13 @@
 
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include "util/net.h"
 #include "system/hexdump.h"
 
 #include <bluetooth/gatt.h>
-#include <btutil/bt_device.h>
+#include <pbl/btutil/bt_device.h>
 
 extern BTErrno gatt_client_discovery_rediscover_all(const BTDeviceInternal *device);
 extern void gatt_client_discovery_handle_service_range_change(GAPLEConnection *connection,
@@ -121,6 +121,33 @@ void gatt_service_changed_server_cleanup_by_connection(GAPLEConnection *connecti
 }
 
 static void prv_send_service_changed_indication(void *ctx) {
+  GAPLEConnection *connection = (GAPLEConnection *)ctx;
+
+  BTDeviceInternal device;
+  bt_lock();
+  {
+    // The connection may have been torn down between the timer firing and this
+    // callback running, leaving a dangling pointer. Bail if it is no longer live.
+    if (!connection || !gap_le_connection_is_valid(connection)) {
+      bt_unlock();
+      return;
+    }
+    connection->gatt_service_changed_indication_timer = TIMER_INVALID_ID;
+    // Copy the device address while holding bt_lock — the driver resolves the
+    // NimBLE connection handle through its own connection table, so no bt_lock
+    // is needed in the driver path.
+    device = connection->device;
+  }
+  bt_unlock();
+
+  // Invalidate the remote's entire attribute cache so it rediscovers all of our
+  // services (see "2.5.2 Attribute Caching" in the BT Core Specification). This
+  // mirrors what the client side treats as a "rediscover everything" request.
+  const ATTHandleRange range = {
+      .start = 0x0001,
+      .end = 0xFFFF,
+  };
+  bt_driver_gatt_send_changed_indication(&device, &range);
 }
 
 static void prv_send_indication_timer_cb(void *ctx) {
@@ -154,7 +181,7 @@ void bt_driver_cb_gatt_service_changed_server_subscribe(
       }
 
       // PRF will always send a "Service Changed" indication:
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
       if (s_service_changed_indications_left <= 0) {
         goto unlock;
       }

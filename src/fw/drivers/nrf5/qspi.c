@@ -4,16 +4,17 @@
 #include <stdint.h>
 
 #include "board/board.h"
-#include "drivers/qspi.h"
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/qspi_definitions.h"
+#include <pbl/drivers/qspi.h>
+#include <pbl/drivers/flash/qspi_flash.h>
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/qspi_definitions.h>
 #include "flash_region/flash_region.h"
 #include "kernel/util/delay.h"
 #include "kernel/util/sleep.h"
-#include "system/logging.h"
+#include "pbl/soc/nrf/sleep.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <hal/nrf_qspi.h>
 #include <nrfx.h>
@@ -137,6 +138,7 @@ static void prv_read(QSPIFlash *dev, void *buf, size_t len, uint32_t addr) {
     nrf_qspi_int_disable(NRF_QSPI, NRF_QSPI_INT_READY_MASK);
   } else {
     nrf_qspi_int_enable(NRF_QSPI, NRF_QSPI_INT_READY_MASK);
+    soc_nrf_sleep_full_block();
   }
 
   nrf_qspi_read_buffer_set(NRF_QSPI, buf, len, addr);
@@ -149,6 +151,7 @@ static void prv_read(QSPIFlash *dev, void *buf, size_t len, uint32_t addr) {
     nrf_qspi_event_clear(NRF_QSPI, NRF_QSPI_EVENT_READY);
   } else {
     xSemaphoreTake(dev->qspi->state->sem, portMAX_DELAY);
+    soc_nrf_sleep_full_release();
   }
 }
 
@@ -157,6 +160,7 @@ static void prv_write(QSPIFlash *dev, const void *buf, size_t len, uint32_t addr
     nrf_qspi_int_disable(NRF_QSPI, NRF_QSPI_INT_READY_MASK);
   } else {
     nrf_qspi_int_enable(NRF_QSPI, NRF_QSPI_INT_READY_MASK);
+    soc_nrf_sleep_full_block();
   }
 
   nrf_qspi_write_buffer_set(NRF_QSPI, buf, len, addr);
@@ -169,6 +173,7 @@ static void prv_write(QSPIFlash *dev, const void *buf, size_t len, uint32_t addr
     nrf_qspi_event_clear(NRF_QSPI, NRF_QSPI_EVENT_READY);
   } else {
     xSemaphoreTake(dev->qspi->state->sem, portMAX_DELAY);
+    soc_nrf_sleep_full_release();
   }
 }
 
@@ -425,6 +430,8 @@ status_t qspi_flash_erase_begin(QSPIFlash *dev, uint32_t addr, bool is_subsector
   }
   nrf_qspi_event_clear(NRF_QSPI, NRF_QSPI_EVENT_READY);
 
+  soc_nrf_sleep_full_block();
+
   return S_SUCCESS;
 }
 
@@ -464,6 +471,8 @@ status_t qspi_flash_is_erase_complete(QSPIFlash *dev) {
   if ((sr2 & part->flag_status_bit_masks.erase_suspend) != 0U) {
     return E_AGAIN;
   }
+
+  soc_nrf_sleep_full_release();
 
   return S_SUCCESS;
 }
@@ -749,7 +758,7 @@ const FlashSecurityRegisters *qspi_flash_security_registers_info(QSPIFlash *dev)
   return &part->sec_registers;
 }
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
 status_t qspi_flash_lock_security_register(QSPIFlash *dev, uint32_t addr) {
   uint8_t sr[2];
   status_t res;
@@ -768,7 +777,7 @@ status_t qspi_flash_lock_security_register(QSPIFlash *dev, uint32_t addr) {
 
   return 0;
 }
-#endif  // RECOVERY_FW
+#endif  // CONFIG_RECOVERY_FW
 
 status_t qspi_flash_write_protection_enable(QSPIFlash *dev) {
   return S_NO_ACTION_REQUIRED;

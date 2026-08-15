@@ -1,27 +1,29 @@
 /* SPDX-FileCopyrightText: 2025 Joshua Jun */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/mic.h"
-#include "drivers/mic/nrf5/pdm_definitions.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/nrf5/pdm_definitions.h>
 
 #include "board/board.h"
-#include "drivers/clocksource.h"
+#include <pbl/drivers/clocksource.h>
 #include "kernel/events.h"
 #include "kernel/kernel_heap.h"
 #include "kernel/pbl_malloc.h"
 #include "kernel/util/sleep.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/circular_buffer.h"
-#include "util/heap.h"
-#include "util/math.h"
-#include "util/size.h"
+#include "pbl/util/circular_buffer.h"
+#include "pbl/util/heap.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
 #include "util/time/time.h"
 
 #include "hal/nrf_clock.h"
 #include "nrfx_pdm.h"
+
+PBL_LOG_MODULE_DEFINE(driver_mic_nrf5, CONFIG_DRIVER_MIC_LOG_LEVEL);
 
 static void prv_pdm_event_handler(nrfx_pdm_evt_t const *p_evt);
 static void prv_dispatch_samples_system_task(void *data);
@@ -171,9 +173,12 @@ static void prv_process_pdm_buffer(MicDeviceState *state, int16_t *pdm_data) {
   if (available_data >= frame_size_bytes && !state->main_pending) {
     state->main_pending = true;
 
-    // Dispatch to low-priority system task instead of kernel event queue
+    // Dispatch to low-priority system task instead of kernel event queue.
+    // A drop is retried on the next PDM buffer event; losing samples beats
+    // resetting the system over a full queue.
     bool should_context_switch = false;
-    if (!system_task_add_callback_from_isr(prv_dispatch_samples_system_task, NULL, &should_context_switch)) {
+    if (!system_task_add_callback_from_isr_droppable(prv_dispatch_samples_system_task, NULL,
+                                                     &should_context_switch)) {
       state->main_pending = false;
     }
   }
@@ -422,9 +427,7 @@ bool mic_start(const MicDevice *this, MicDataHandlerCB data_handler, void *conte
     mutex_unlock_recursive(state->mutex);
     return false;
   }
-  
-  PBL_LOG_INFO("Microphone started");
-  
+
   mutex_unlock_recursive(state->mutex);
   return true;
 }
@@ -464,9 +467,7 @@ void mic_stop(const MicDevice *this) {
   state->audio_buffer = NULL;
   state->audio_buffer_len = 0;
   state->main_pending = false;
-  
-  PBL_LOG_INFO("Microphone stopped");
-  
+
   mutex_unlock_recursive(state->mutex);
 }
 

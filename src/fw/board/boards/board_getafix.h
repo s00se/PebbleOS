@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include "drivers/imu/lis2dw12/lis2dw12.h"
-#include "drivers/backlight/aw9364e.h"
-#include "drivers/pmic/npm1300.h"
-#include "drivers/vibe/vibe_aw86225.h"
-#include "drivers/touch/cst816/touch_sensor_definitions.h"
+#include <pbl/drivers/imu/lis2dw12/lis2dw12.h>
+#include <pbl/drivers/backlight/aw9364e.h>
+#include <pbl/drivers/pmic/npm1300.h>
+#include <pbl/drivers/vibe/vibe_aw86225.h>
+#include <pbl/drivers/touch/cst816/touch_sensor_definitions.h>
 #include "pbl/services/imu/units.h"
 
 #define BT_VENDOR_ID 0x0EEA
@@ -44,9 +44,7 @@ extern const LedControllerAW9364E AW9364E;
 extern const BoardConfigActuator BOARD_CONFIG_VIBE;
 
 static const BoardConfigAccel BOARD_CONFIG_ACCEL = {
-  .accel_config = {
-    .default_motion_sensitivity = 55U, // Medium
-  },
+  .default_motion_sensitivity = 55U, // Medium
 };
 
 static const BoardConfigMag BOARD_CONFIG_MAG = {

@@ -1,7 +1,6 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "BSCAPI.h"
 #include "clar.h"
 #include "kernel/events.h"
 #include "pbl/services/comm_session/meta_endpoint.h"
@@ -9,7 +8,7 @@
 #include "pbl/services/comm_session/session_remote_version.h"
 #include "pbl/services/comm_session/session_transport.h"
 #include "pbl/services/comm_session/test_endpoint_ids.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 // Stubs
 ///////////////////////////////////////////////////////////

@@ -8,7 +8,6 @@
 
 #include "applib/bluetooth/ble_ad_parse.h"
 
-#include "comm/ble/ble_log.h"
 #include "comm/bt_lock.h"
 
 #include "git_version.auto.h"
@@ -26,9 +25,9 @@
 #include <bluetooth/pebble_bt.h>
 #include <bluetooth/pebble_pairing_service.h>
 #include <bluetooth/bluetooth_types.h>
-#include <btutil/bt_uuid.h>
-#include <util/attributes.h>
-#include <util/size.h>
+#include <pbl/btutil/bt_uuid.h>
+#include <pbl/util/attributes.h>
+#include <pbl/util/size.h>
 
 static GAPLEAdvertisingJobRef s_discovery_advert_job;
 
@@ -66,7 +65,7 @@ static void prv_schedule_ad_job(void) {
   Uuid service_uuids[2];
   size_t num_uuids = 0;
 
-#if defined(CONFIG_HRM) && !defined(RECOVERY_FW)
+#if defined(CONFIG_HRM) && !defined(CONFIG_RECOVERY_FW)
   // NOTE: The HRM service has to be first in the list because otherwise the Pebble won't
   // show up as an HRM device in Strava for Android...
   if (ble_hrm_is_supported_and_enabled()) {

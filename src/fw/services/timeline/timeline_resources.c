@@ -8,13 +8,13 @@
 #include "kernel/pbl_malloc.h"
 #include "process_management/app_install_manager.h"
 #include "resource/resource_ids.auto.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
 #include "system/passert.h"
 #include "util/net.h"
 #include "util/pack.h"
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 
 #define RESOURCE_MAX_SIZE (700)
 

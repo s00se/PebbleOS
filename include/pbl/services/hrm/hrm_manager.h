@@ -24,7 +24,7 @@ typedef enum {
   HRMFeatureShift_BPM = 0,
   HRMFeatureShift_HRV = 1,
   HRMFeatureShift_SpO2 = 2,
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
   HRMFeatureShift_CTR = 3,
   HRMFeatureShift_Leakage = 4,
 #endif
@@ -35,7 +35,7 @@ typedef enum {
   HRMFeature_BPM = (1 << HRMFeatureShift_BPM), //!< Collect heartrate BPM.
   HRMFeature_HRV = (1 << HRMFeatureShift_HRV), //!< Collect heartrate variability.
   HRMFeature_SpO2 = (1 << HRMFeatureShift_SpO2), //!< Collect blood oxygen saturation.
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
   HRMFeature_CTR = (1 << HRMFeatureShift_CTR), //!< Collect ppg CTR test data.
   HRMFeature_Leakage = (1 << HRMFeatureShift_Leakage), //!< Collect ppg leakage test data.
 #endif
@@ -115,6 +115,7 @@ bool sys_hrm_manager_set_update_interval(HRMSessionRef session, uint32_t update_
 //! @param[out] app_id if not NULL, the app_id belonging to this subscription is returned here
 //! @param[out] update_interval_s if not NULL, the requested update interval is returned here
 //! @param[out] expire_s if not NULL, the number of seconds that this subcription will expire in
+//! @param[out] features if not NULL, the features of this subscription are returned here
 //! @return true if succss, false if subscription was not found
 bool sys_hrm_manager_get_subscription_info(HRMSessionRef session, AppInstallId *app_id,
                                            uint32_t *update_interval_s, uint16_t *expire_s,
@@ -148,7 +149,7 @@ typedef struct {
   uint8_t spo2_percent;
   HRMQuality spo2_quality;
 
-#ifdef MANUFACTURING_FW
+#ifdef CONFIG_MFG
   double ctr[6];
   double leakage[6];
 #endif

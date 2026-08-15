@@ -18,14 +18,16 @@
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/activity/activity.h"
 #include "shell/system_app_ids.auto.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <bluetooth/gap_le_connect.h>
 #include <bluetooth/hrm_service.h>
-#include <btutil/bt_device.h>
-#include <util/list.h>
-#include <util/size.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/util/list.h>
+#include <pbl/util/size.h>
+
+PBL_LOG_MODULE_DECLARE(service_bluetooth, CONFIG_SERVICE_BLUETOOTH_LOG_LEVEL);
 
 #ifdef CONFIG_HRM
 

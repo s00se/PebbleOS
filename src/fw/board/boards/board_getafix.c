@@ -3,8 +3,8 @@
 
 #include "board/board.h"
 #include "board/splash.h"
-#include "drivers/sf32lb52/debounced_button_definitions.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/sf32lb52/debounced_button_definitions.h>
+#include <pbl/drivers/watchdog.h>
 #include "system/passert.h"
 
 #include "bf0_hal.h"
@@ -269,7 +269,6 @@ static I2CBus s_i2c_bus_1 = {
     .hal = &s_i2c_bus_hal_1,
     .name = "i2c1",
     .state = &s_i2c_bus_state_1,
-    .stop_mode_inhibitor = InhibitorI2C1,
 };
 
 I2CBus *const I2C1_BUS = &s_i2c_bus_1;
@@ -292,15 +291,10 @@ static const LIS2DW12Config s_lis2dw12_config = {
       .peripheral = hwp_gpio1,
       .gpio_pin = 26,
     },
-#ifdef CONFIG_BOARD_GETAFIX_EVT
-    .disable_addr_pullup = true,
-#endif
-    .wk_dur_default = 1U,
-    .wk_ths_min = 1U,
-    .wk_ths_max = 40U,
-    .wk_ths_default = 16U,
-    .scale_mg = 4000U,
-    .fifo_threshold = 32U,
+    .int1_in = {
+      .gpio = hwp_gpio1,
+      .gpio_pin = 26,
+    },
     .axis_map = {
         [AXIS_X] = 0,
         [AXIS_Y] = 1,
@@ -360,7 +354,6 @@ static I2CBus s_i2c_bus_2 = {
     .hal = &s_i2c_bus_hal_2,
     .name = "i2c2",
     .state = &s_i2c_bus_state_2,
-    .stop_mode_inhibitor = InhibitorI2C2,
 };
 
 I2CBus *const I2C2_BUS = &s_i2c_bus_2;
@@ -389,10 +382,6 @@ static const TouchSensor s_touch_cst816 = {
         .gpio_pin = 28,
         .active_high = false,
     },
-    .max_x = 260,
-    .max_y = 260,
-    .invert_x_axis = false,
-    .invert_y_axis = true,
 };
 
 const TouchSensor *CST816 = &s_touch_cst816;
@@ -435,7 +424,6 @@ static I2CBus s_i2c_bus_3 = {
     .hal = &s_i2c_bus_hal_3,
     .name = "i2c3",
     .state = &s_i2c_bus_state_3,
-    .stop_mode_inhibitor = InhibitorI2C3,
 };
 
 I2CBus *const I2C3_BUS = &s_i2c_bus_3;
@@ -504,8 +492,13 @@ const BoardConfigPower BOARD_CONFIG_POWER = {
 
 const BoardConfig BOARD_CONFIG = {
   .backlight_on_percent = 25,
-  .ambient_light_dark_threshold = 150,
-  .ambient_k_delta_threshold = 25,
+  .ambient_light_dark_threshold = 800,
+  .ambient_k_delta_threshold = 100,
+  // Bench-calibrated on 1 DVT2 unit, fit above 4500 lux; readings below
+  // ~4000 lux deviated from the fit on that unit and need a re-measure.
+  .ambient_light_lux_dark_offset = 0,
+  .ambient_light_lux_num = 50,
+  .ambient_light_lux_den = 517,
 };
 
 const BoardConfigButton BOARD_CONFIG_BUTTON = {

@@ -5,8 +5,8 @@
 #include "process_management/app_manager.h"
 #include "pbl/services/comm_session/app_session_capabilities.h"
 #include "pbl/services/settings/settings_file.h"
-#include "os/mutex.h"
-#include "system/logging.h"
+#include "pbl/os/mutex.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "util/units.h"
 

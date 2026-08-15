@@ -1,4 +1,4 @@
-from waftools.pebble_test import clar
+from tools.waf.pebble_test import clar
 
 clar(ctx,
      sources_ant_glob=" src/fw/applib/app_message/app_message.c"
@@ -26,7 +26,7 @@ clar(ctx,
 
 clar(ctx,
      sources_ant_glob=(" src/fw/applib/cpu_cache.c"
-                       " src/libos/mcu/cache_arm.c"
+                       " lib/os/mcu/cache_arm.c"
                        ),
      test_sources_ant_glob="test_cpu_cache.c",
      defines=["UNITTEST_WITH_SYSCALL_PRIVILEGES=1"],
@@ -43,7 +43,6 @@ clar(ctx,
         " src/fw/services/filesystem/app_file.c"
         " src/fw/services/filesystem/flash_translation.c"
         " src/fw/services/filesystem/pfs.c"
-        " src/fw/services/legacy/persist_map.c"
         " src/fw/services/persist/service.c"
         " src/fw/services/settings/settings_file.c"
         " src/fw/services/settings/settings_raw_iter.c"
@@ -64,6 +63,18 @@ clar(ctx,
         " tests/fakes/fake_spi_flash.c"
     ),
     test_sources_ant_glob = "test_pbl_std.c",
+    override_includes=['dummy_board'])
+
+clar(ctx,
+    sources_ant_glob = (
+        " src/fw/flash_region/flash_region.c"
+        " src/fw/applib/pbl_std/pbl_std.c"
+        " src/fw/applib/pbl_std/strftime.c"
+        " src/fw/applib/pbl_std/timelocal.c"
+        " tests/fakes/fake_rtc.c"
+        " tests/fakes/fake_spi_flash.c"
+    ),
+    test_sources_ant_glob = "test_strftime.c",
     override_includes=['dummy_board'])
 
 clar(ctx,
@@ -99,7 +110,8 @@ clar(ctx,
                        "  tests/fakes/fake_rtc.c" \
                        "  tests/fakes/fake_spi_flash.c" \
                        "  tests/fixtures/resources/builtin_resources.auto.c" \
-                       "  tests/fixtures/resources/pfs_resource_table.c",
+                       "  tests/fixtures/resources/pfs_resource_table.c" \
+                       "  tests/fw/applib/test_text_resources_font_stub.c",
     test_sources_ant_glob = "test_text_resources.c",
     override_includes=['dummy_board'])
 
@@ -120,6 +132,11 @@ clar(ctx,
         "tests/fakes/fake_events.c "
      ),
      test_sources_ant_glob="test_unobstructed_area_service.c",
+     override_includes=['dummy_board'])
+
+clar(ctx,
+     sources_ant_glob="src/fw/applib/touch_service.c",
+     test_sources_ant_glob="test_touch_service.c",
      override_includes=['dummy_board'])
 
 clar(ctx,

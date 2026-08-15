@@ -10,9 +10,9 @@
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/activity/health_util.h"
 #include "shell/prefs.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 // Compile-time display offset calculations
 #define HEALTH_Y_OFFSET ((DISP_ROWS - LEGACY_2X_DISP_ROWS) / 2)
@@ -32,7 +32,13 @@ static void prv_draw_headings(HealthDetailCard *detail_card, GContext *ctx, cons
     }
 
 #if PBL_ROUND
+#if PBL_DISPLAY_HEIGHT >= 200
+    // Spread the summary content over the taller display instead of packing it at the top
+    int16_t header_y_origin = ((detail_card->num_headings > 1) ? 40 : 52) +
+                              (i * (rect_height + 12));
+#else
     int16_t header_y_origin = ((detail_card->num_headings > 1) ? 22 : 32) + (i * (rect_height + 5));
+#endif
 #endif
 
     GRect header_rect = grect_inset(layer->bounds, GEdgeInsets(rect_padding));
@@ -114,7 +120,9 @@ static void prv_draw_subtitles(HealthDetailCard *detail_card, GContext *ctx, con
     }
 
     GRect subtitle_rect = grect_inset(layer->bounds, GEdgeInsets(rect_padding));
-    subtitle_rect.origin.y += PBL_IF_RECT_ELSE(detail_card->y_origin, 125);
+    // On taller round displays the subtitle moves down to balance the spread-out headings
+    subtitle_rect.origin.y +=
+        PBL_IF_RECT_ELSE(detail_card->y_origin, (PBL_DISPLAY_HEIGHT >= 200) ? 170 : 125);
     subtitle_rect.size.h = rect_height;
 
     detail_card->y_origin += rect_height + rect_padding;
@@ -264,8 +272,6 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer,
                                   MenuIndex *cell_index, void *context) {
   HealthDetailCard *detail_card = (HealthDetailCard *)context;
 
-  MenuIndex selected_index = menu_layer_get_selected_index(&detail_card->menu_layer);
-
   if (cell_index->row == 0) {
     graphics_context_set_fill_color(ctx, detail_card->bg_color);
     graphics_fill_rect(ctx, &cell_layer->bounds);
@@ -282,7 +288,13 @@ static void prv_draw_row_callback(GContext *ctx, const Layer *cell_layer,
   GRect label_rect = grect_inset(cell_layer->bounds, GEdgeInsets(rect_padding));
 
   if (!menu_layer_is_index_selected(&detail_card->menu_layer, cell_index)) {
+#if PBL_DISPLAY_HEIGHT >= 200
+    // Multiple unfocused rows are visible per side; center each label in its cell
+    label_rect.origin.y = (cell_layer->bounds.size.h - 24) / 2;
+#else
+    const MenuIndex selected_index = menu_layer_get_selected_index(&detail_card->menu_layer);
     label_rect.origin.y = (cell_index->row < selected_index.row) ? 3 : 22;
+#endif
 
     graphics_context_set_text_color(ctx, gcolor_legible_over(detail_card->bg_color));
     graphics_draw_text(ctx, zone->label, detail_card->subtitle_font, label_rect,
@@ -335,7 +347,12 @@ static int16_t prv_get_cell_height_callback(MenuLayer *menu_layer,
     return menu_layer_is_index_selected(menu_layer, cell_index) ? DISP_ROWS : 0;
   }
 
+#if PBL_DISPLAY_HEIGHT >= 200
+  // Fit three unfocused rows on each side of the focused row
+  return menu_layer_is_index_selected(menu_layer, cell_index) ? 50 : 35;
+#else
   return menu_layer_is_index_selected(menu_layer, cell_index) ? 50 : 54;
+#endif
 }
 
 static void prv_refresh_content_indicators(HealthDetailCard *detail_card) {

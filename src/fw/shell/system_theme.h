@@ -17,7 +17,7 @@ typedef enum TextStyleFont {
   //! a notification belongs to, or who sent a message. It is smaller than the body copy when
   //! readable, but always bold.
   TextStyleFont_Header,
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   //! Title is for prominent text that is usually the title or name of the content, giving context
   //! for the user such as the subject line of an email. It is comparable to the body, but
   //! always bold.
@@ -39,7 +39,7 @@ typedef enum TextStyleFont {
   TextStyleFont_MenuCellTitle,
   //! For subtitles of menu cells that provide auxiliary information about an item of a list.
   TextStyleFont_MenuCellSubtitle,
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   //! Time Header Numbers is used specially by Timeline to display content time in extra bold e.g.
   //! 4:06 AM. It is comparable to the title.
   TextStyleFont_TimeHeaderNumbers,
@@ -62,7 +62,7 @@ typedef enum TextStyleFont {
 //! @return The font key of the font class using the user's preferred content size.
 const char *system_theme_get_font_key(TextStyleFont font);
 
-//! @param content_size The desired content size.
+//! @param size The desired content size.
 //! @param font The desired font class to obtain a font key of.
 //! @return The font key of the given content size and font class.
 const char *system_theme_get_font_key_for_size(PreferredContentSize size, TextStyleFont font);
@@ -71,7 +71,7 @@ const char *system_theme_get_font_key_for_size(PreferredContentSize size, TextSt
 //! @return The font of the font class using the user's preferred content size.
 GFont system_theme_get_font(TextStyleFont font);
 
-//! @param content_size The desired content size.
+//! @param size The desired content size.
 //! @param font The desired font class to obtain a font of.
 //! @return The font of the given content size and font class.
 GFont system_theme_get_font_for_size(PreferredContentSize size, TextStyleFont font);

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "process_management/app_install_manager.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 typedef struct PACKED AppMenuOrderStorage {
   uint8_t list_length;
@@ -12,6 +12,12 @@ typedef struct PACKED AppMenuOrderStorage {
 } AppMenuOrderStorage;
 
 void app_order_storage_init(void);
+
+#if UNITTEST
+//! Reset app_order_storage state for testing - clears cached "file missing" flag.
+//! Not built into production firmware (tests only).
+void app_order_storage_reset_for_tests(void);
+#endif
 
 //! Returns an AppMenuOrderStorage struct on the kernel heap
 AppMenuOrderStorage *app_order_read_order(void);

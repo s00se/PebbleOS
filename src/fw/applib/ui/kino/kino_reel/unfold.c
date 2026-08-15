@@ -6,9 +6,9 @@
 #include "unfold.h"
 
 #include "applib/applib_malloc.auto.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "applib/graphics/gdraw_command_private.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "syscall/syscall.h"
 
 static AnimationProgress prv_ease_in_out_first_quarter(AnimationProgress progress) {

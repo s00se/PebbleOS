@@ -8,16 +8,18 @@
 
 #include "console/prompt.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
 #include "pbl/services/timeline/attributes_actions.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/units.h"
 
 #include <stdio.h>
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 T_STATIC const char *iOS_NOTIF_PREF_DB_FILE_NAME = "iosnotifprefdb";
 T_STATIC const int iOS_NOTIF_PREF_MAX_SIZE = KiBYTES(32);
@@ -117,6 +119,11 @@ iOSNotifPrefs* ios_notif_pref_db_get_prefs(const uint8_t *app_id, int key_len) {
   const int serialized_prefs_data_len = prv_get_serialized_prefs(&file, app_id, key_len,
                                                                  &serialized_prefs);
   prv_file_close_and_unlock(&file);
+
+  if (!serialized_prefs) {
+    // Record was undersized, unreadable, or allocation failed.
+    return NULL;
+  }
 
   size_t string_alloc_size;
   uint8_t attributes_per_action[serialized_prefs->num_actions];
@@ -228,7 +235,7 @@ status_t ios_notif_pref_db_insert(const uint8_t *key, int key_len,
     char buffer[key_len + 1];
     strncpy(buffer, (const char *)key, key_len);
     buffer[key_len] = '\0';
-    PBL_LOG_INFO("iOS notif pref insert <%s>", buffer);
+    PBL_LOG_DBG("iOS notif pref insert <%s>", buffer);
 
     // All records inserted from the phone are not dirty (the phone is the source of truth)
     rv = settings_file_mark_synced(&file, key, key_len);
@@ -386,6 +393,11 @@ static bool prv_print_notif_pref_db(SettingsFile *file, SettingsRecordInfo *info
 
   SerializedNotifPrefs *serialized_prefs = NULL;
   prv_get_serialized_prefs(file, (uint8_t *)app_id, info->key_len, &serialized_prefs);
+  if (!serialized_prefs) {
+    prompt_send_response("Failed to read prefs");
+    prompt_send_response("");
+    return true;
+  }
   prompt_send_response_fmt(buffer, sizeof(buffer), "Attributes: %d,  Actions: %d",
       serialized_prefs->num_attributes, serialized_prefs->num_actions);
 

@@ -8,6 +8,9 @@ import time
 import waflib
 from waflib import Logs
 from waflib.Build import BuildContext
+from waflib.Configure import conf
+from waflib.TaskGen import before_method, feature
+from waflib.Tools.ccroot import link_task
 
 
 def _normalize_kconfig_override_args(argv):
@@ -26,13 +29,19 @@ waf_dir = sys.path[0]
 sys.path.append(os.path.join(waf_dir, 'tools'))
 sys.path.append(os.path.join(waf_dir, 'tools/log_hashing'))
 sys.path.append(os.path.join(waf_dir, 'sdk/tools/'))
-sys.path.append(os.path.join(waf_dir, 'waftools'))
+sys.path.append(os.path.join(waf_dir, 'tools/waf'))
 
-import waftools.gitinfo
-import waftools.ldscript
-import waftools.openocd
-import waftools.pebble_sdk_gcc as pebble_sdk_gcc
-from waftools.pebble_sdk_locator import activate_sdk
+import tools.waf.generate_log_strings_json
+import tools.waf.generate_timezone_data
+import tools.waf.gitinfo
+import tools.waf.boards
+import tools.waf.ldscript
+import tools.waf.objcopy
+import tools.waf.pblboot
+import tools.waf.pebble_sdk_gcc as pebble_sdk_gcc
+import tools.runners as pebble_runners
+from tools.waf.pebble_sdk_locator import activate_sdk
+from tools.pebble_sdk_platform import pebble_platforms
 
 from pebble_sdk_version import set_env_sdk_version
 
@@ -42,15 +51,43 @@ activate_sdk(waflib.Context.run_dir or os.getcwd())
 
 LOGHASH_OUT_PATH = 'src/fw/loghash_dict.json'
 
-RUNNERS = {
-    'asterix': ['openocd', 'nrfutil'],
-    'obelix_dvt': ['sftool'],
-    'obelix_pvt': ['sftool'],
-    'obelix_bb2': ['sftool'],
-    'getafix_evt': ['sftool'],
-    'getafix_dvt': ['sftool'],
-    'getafix_dvt2': ['sftool'],
-}
+
+@conf
+def get_pbz_node(ctx, fw_type, board_type, version_string, slot=None):
+    return ctx.path.get_bld().make_node('{}_{}_{}{}.pbz'.format(
+        fw_type, board_type, version_string, "" if slot is None else f"_slot{slot}"
+    ))
+
+
+@conf
+def get_pbpack_node(ctx):
+    return ctx.path.get_bld().make_node('system_resources.pbpack')
+
+
+@conf
+def get_pebbleos_node(ctx):
+    return ctx.path.get_bld().make_node('pebbleos.bin')
+
+
+@feature("c")
+@before_method('apply_link')
+def use_group_link(self):
+    """
+    Use a link group to resolve dependencies
+    """
+    if 'cprogram' in self.features and getattr(self, 'link_group', False):
+        self.features.insert(0, "group_cprogram")
+
+
+class group_cprogram(link_task):
+    run_str = '${LINK_CC} ${LINKFLAGS} ${CCLNK_SRC_F}${SRC} ${CCLNK_TGT_F}${TGT[0].abspath()} ${RPATH_ST:RPATH} ${FRAMEWORKPATH_ST:FRAMEWORKPATH} ${FRAMEWORK_ST:FRAMEWORK} ${ARCH_ST:ARCH} -Wl,--start-group ${STLIB_MARKER} ${STLIBPATH_ST:STLIBPATH} ${STLIB_ST:STLIB} ${SHLIB_MARKER} ${LIBPATH_ST:LIBPATH} ${LIB_ST:LIB} -Wl,--end-group'
+    ext_out=['.bin']
+    vars=['LINKDEPS']
+    inst_to='${BINDIR}'
+
+
+def _available_boards():
+    return tools.waf.boards.available_boards(waflib.Context.run_dir or os.getcwd())
 
 
 def truncate(msg):
@@ -67,11 +104,21 @@ def truncate(msg):
     return msg
 
 
+class _OptParserAdapter(object):
+    """Adapts a waf (optparse) option container to the argparse-style
+    add_argument() interface the runners' do_add_parser() expects."""
+
+    def __init__(self, opt):
+        self._opt = opt
+
+    def add_argument(self, *flags, **kwargs):
+        self._opt.add_option(*flags, **kwargs)
+
+
 def options(opt):
-    opt.load('pebble_arm_gcc', tooldir='waftools')
-    opt.load('show_configure', tooldir='waftools')
-    opt.load('kconfig', tooldir='waftools')
-    opt.recurse('src/fw')
+    opt.load('pebble_arm_gcc', tooldir='tools/waf')
+    opt.load('show_configure', tooldir='tools/waf')
+    opt.load('kconfig', tooldir='tools/waf')
 
     gr = opt.add_option_group('test options')
     gr.add_option('-D', '--debug_test', action='store_true',
@@ -89,155 +136,39 @@ def options(opt):
     gr.add_option('--no_run', action='store_true', help='Do not run the tests, just build them')
     gr.add_option('--no_images', action='store_true', help='skip generation of test images, '
                   'which are only required for some tests and can slow down build times')
+    boards = _available_boards()
     opt.add_option('--board', action='store',
-                   choices=[ 'asterix',
-                             'obelix_dvt',
-                             'obelix_pvt',
-                             'obelix_bb2',
-                             'getafix_evt',
-                             'getafix_dvt',
-                             'getafix_dvt2',
-                             'qemu_emery',
-                             'qemu_flint',
-                             'qemu_gabbro',
-                            ],
+                   choices=boards,
                    help='Which board we are targeting '
-                        'asterix, obelix, getafix...')
-    opt.add_option('--runner', default=None, choices=['openocd', 'sftool', 'nrfutil'],
-                   help='Which runner we are using')
-    opt.add_option('--openocd-jtag', action='store', default=None, dest='openocd_jtag',  # default is bb2 (below)
-                   choices=waftools.openocd.JTAG_OPTIONS.keys(),
-                   help='Which JTAG programmer we are using '
-                        '(bb2 (default), olimex, ev2, etc)')
-    opt.add_option('--nosleep', action='store_true',
-                   help='Disable sleep and stop mode (to use JTAG+GDB)')
-    opt.add_option('--nostop', action='store_true',
-                   help='Disable stop mode (to use JTAG+GDB)')
-    opt.add_option('--nowatch', action='store_true',
-                   help='Disable the watchface idle timeout')
-    opt.add_option('--nowatchdog', action='store_true',
-                   help='Disable automatic reboots when watchdog fires')
-    opt.add_option('--performance_tests', action='store_true',
-                   help='Enables instrumentation for performance testing (off by default)')
-    opt.add_option('--ui_debug', action='store_true',
-                   help='Enable window dump & layer nudge CLI cmd (off by default)')
-    opt.add_option('--sdkshell', action='store_true',
-                   help='Use the sdk shell instead of the normal shell')
-    opt.add_option('--nolog', action='store_true',
-                   help='Disable PBL_LOG macros to save space')
-    opt.add_option('--nohash', action='store_true',
-                   help='Disable log hashing and make the logs human readable')
-    opt.add_option('--log-level', default='debug', choices=['error', 'warn', 'info', 'debug', 'debug_verbose'],
-       help='Default global log level')
-    opt.add_option('--flash-log-level', default='info', choices=['error', 'warn', 'info', 'debug', 'debug_verbose'],
-       help='Default flash log level')
-
+                        '({})'.format(', '.join(boards)))
+    opt.add_option('--runner', default=None,
+                   help="Override the board's default runner for flash/run/debug")
+    opt.add_option('--resources', action='store_true',
+                   help='Also flash system resources alongside the firmware')
+    # Runner-specific arguments (e.g. --tty for sftool) are contributed by the
+    # runners themselves, mirroring Zephyr's west do_add_parser().
+    pebble_runners.register_args(_OptParserAdapter(opt))
     opt.add_option('--compile_commands', action='store_true', help='Create a clang compile_commands.json')
     opt.add_option('--onlysdk', action='store_true', help="only build the sdk")
-    opt.add_option('--no-link', action='store_true',
-                   help='Do not link the final firmware binary. This is used for static analysis')
-    opt.add_option('--noprompt', action='store_true',
-                   help='Disable the serial console to save space')
-    opt.add_option('--profiler', action='store_true', help='Enable the profiler.')
-    opt.add_option('--profile_interrupts', action='store_true',
-                   help='Enable profiling of all interrupts.')
-    opt.add_option('--no_sandbox', action='store_true',
-                   help='Disable the MPU for 3rd party apps.')
-    opt.add_option('--malloc_instrumentation', action='store_true',
-                   help='Enables malloc instrumentation')
     opt.add_option('--variant', action='store', default='normal',
                    choices=['normal', 'prf'],
                    help='Build variant: normal (default) or prf (recovery firmware)')
-    opt.add_option('--mfg', action='store_true', help='Enable specific MFG-only options in the PRF build')
-    opt.add_option('--no-pulse-everywhere',
-                   action='store_true',
-                   help='Disables PULSE everywhere, uses legacy logs and prompt')
-
-def handle_configure_options(conf):
-    if conf.options.noprompt:
-        conf.env.append_value('DEFINES', 'DISABLE_PROMPT')
-        conf.env.DISABLE_PROMPT = True
-
-    if conf.options.malloc_instrumentation:
-        conf.env.append_value('DEFINES', 'MALLOC_INSTRUMENTATION')
-        print("Enabling malloc instrumentation")
-
-    if conf.options.performance_tests:
-        conf.env.PERFORMANCE_TESTS = True
-
-    if conf.options.nosleep:
-        conf.env.append_value('DEFINES', 'PBL_NOSLEEP')
-        print("Sleep/stop mode disabled")
-
-    if conf.options.nostop:
-        conf.env.append_value('DEFINES', 'PBL_NOSTOP')
-        print("Stop mode disabled")
-
-    if conf.options.nowatch:
-        conf.env.append_value('DEFINES', 'NO_WATCH_TIMEOUT')
-        print("Watch watchdog disabled")
-
-    if conf.options.nowatchdog:
-        conf.env.append_value('DEFINES', 'NO_WATCHDOG')
-        conf.env.NO_WATCHDOG = True
-        print("Watchdog reboot disabled")
-
-    if conf.options.performance_tests:
-        conf.env.append_value('DEFINES', 'PERFORMANCE_TESTS')
-        conf.options.profiler = True
-        print("Instrumentation and apps for performance measurement enabled (enables profiler)")
-
-    print(f"Log level: {conf.options.log_level.upper()}")
-    conf.env.append_value('DEFINES', f'DEFAULT_LOG_LEVEL=LOG_LEVEL_{conf.options.log_level.upper()}')
-
-    conf.env.append_value('DEFINES', f'FLASH_LOG_LEVEL=LOG_LEVEL_{conf.options.flash_log_level.upper()}')
-
-    if conf.options.ui_debug:
-        conf.env.append_value('DEFINES', 'UI_DEBUG')
-
-    if conf.options.no_sandbox:
-        print("Sandbox disabled")
-    else:
-        conf.env.append_value('DEFINES', 'APP_SANDBOX')
-
-    if not conf.options.nolog:
-        conf.env.append_value('DEFINES', 'PBL_LOG_ENABLED')
-        if not conf.options.nohash and not conf.env.CONFIG_QEMU:
-            conf.env.append_value('DEFINES', 'PBL_LOGS_HASHED')
-
-    if conf.options.profile_interrupts:
-        conf.env.append_value('DEFINES', 'PROFILE_INTERRUPTS')
-        if not conf.options.profiler:
-            # Can't profile interrupts without the profiler enabled
-            print("Enabling profiler")
-            conf.options.profiler = True
-
-    if conf.options.profiler:
-        conf.env.append_value('DEFINES', 'PROFILER')
-        if not conf.options.nostop:
-            print("Enable --nostop for accurate profiling.")
-            conf.env.append_value('DEFINES', 'PBL_NOSTOP')
-
-    if conf.options.lto:
-        print("Turning on LTO.")
-
-    if conf.options.no_link:
-        conf.env.NO_LINK = True
-        print("Not linking firmware")
-
-    if not conf.options.no_pulse_everywhere and (not conf.env.CONFIG_RELEASE or conf.options.mfg):
-        conf.env.append_value('DEFINES', 'PULSE_EVERYWHERE=1')
 
 def configure(conf):
     if not conf.options.board:
         conf.fatal('No board selected! '
                    'You must pass a --board argument when configuring.')
 
-    # Has to be 'waftools.gettext' as unadorned 'gettext' will find the gettext
-    # module in the standard library.
-    conf.load('waftools.gettext')
+    try:
+        board = tools.waf.boards.parse_board(conf.srcnode.abspath(), conf.options.board)
+    except ValueError as e:
+        conf.fatal(str(e))
 
-    conf.load('kconfig', tooldir='waftools')
+    # Has to be 'tools.waf.gettext' as unadorned 'gettext' will find the gettext
+    # module in the standard library.
+    conf.load('tools.waf.gettext')
+
+    conf.load('kconfig', tooldir='tools/waf')
 
     # JS engine selection is driven entirely by CONFIG_MODDABLE_XS. Override
     # per-board with `-DCONFIG_MODDABLE_XS=y/n` at configure time.
@@ -246,24 +177,17 @@ def configure(conf):
     else:
         conf.env.JS_ENGINE = 'none'
 
-    if not conf.options.runner:
-        conf.env.RUNNER = RUNNERS.get(conf.options.board, [None])[0]
-    else:
-        if conf.options.runner not in RUNNERS.get(conf.options.board, []):
-            conf.fatal('Runner {} is not supported on board {}'.format(
-                       conf.options.runner, conf.options.board))
-        conf.env.RUNNER = conf.options.runner
+    if not board.runners and not conf.env.CONFIG_QEMU:
+        conf.fatal('Board {} does not define any supported runners'.format(
+                   board.target))
 
-    if conf.env.RUNNER == 'openocd':
-        if conf.options.openocd_jtag:
-            conf.env.OPENOCD_JTAG = conf.options.openocd_jtag
-        elif conf.options.board in ('asterix'):
-            conf.env.OPENOCD_JTAG = 'swd_cmsisdap'
-        else:
-            # default to bb2
-            conf.env.OPENOCD_JTAG = 'bb2'
+    for runner in board.runners:
+        if runner not in pebble_runners.names():
+            conf.fatal('Board {} references unknown runner {}'.format(
+                       board.target, runner))
 
-    conf.env.FLASH_ITCM = False
+    conf.env.SUPPORTED_RUNNERS = board.runners
+    conf.env.RUNNER = board.runners[0] if board.runners else None
 
     # Set platform used for building the SDK
     if conf.env.CONFIG_PLATFORM_EMERY:
@@ -276,14 +200,16 @@ def configure(conf):
         conf.env.PLATFORM_NAME = 'gabbro'
         conf.env.MIN_SDK_VERSION = 3
     else:
-        conf.fatal('No platform specified for {}!'.format(conf.options.board))
+        conf.fatal('No platform specified for {}!'.format(board.target))
 
     # Save this for later
-    conf.env.BOARD = conf.options.board
+    conf.env.BOARD = board.target
+    conf.env.BOARD_NAME = board.name
+    conf.env.BOARD_REVISION = board.revision
+    conf.env.BOARD_NORMALIZED = board.normalized
 
     conf.env.VARIANT = conf.options.variant
     if conf.env.VARIANT == 'prf':
-        conf.env.append_value('DEFINES', ['RECOVERY_FW'])
         conf.env.JS_ENGINE = 'none'
 
     # PRF variant forces JS_ENGINE='none' above. If the board's defconfig had
@@ -294,21 +220,20 @@ def configure(conf):
         conf.env.append_value('CFLAGS', ['-UCONFIG_MODDABLE_XS'])
         conf.env.CONFIG_MODDABLE_XS = None
 
-    if conf.options.mfg:
-        # Note that for the most part PRF and MFG firmwares are the same, so for MFG PRF builds
-        # both MANUFACTURING_FW and RECOVERY_FW will be defined.
-        conf.env.IS_MFG = True
-        conf.env.append_value('DEFINES', ['MANUFACTURING_FW'])
-
     conf.find_program('node nodejs', var='NODE',
                       errmsg="Unable to locate the Node command. "
                              "Please check your Node installation and try again.")
 
     conf.load('protoc')
-    conf.recurse('src/fw')
 
-    if conf.env.RUNNER == 'openocd':
-        waftools.openocd.write_cfg(conf)
+    conf.load('binary_header')
+
+    platform = pebble_platforms[conf.env.PLATFORM_NAME]
+    define = 'MAX_FONT_GLYPH_SIZE={}'.format(platform['MAX_FONT_GLYPH_SIZE'])
+    conf.env.append_value('DEFINES', [define])
+
+    # Used for pblboot image naming; -1 when the board has no slots.
+    conf.env.SLOT = conf.env.CONFIG_FIRMWARE_SLOT if conf.env.CONFIG_PBLBOOT else -1
 
     # Save a baseline environment that we'll use for unit tests
     # Detach so operations against conf.env don't affect unit_test_env
@@ -318,18 +243,19 @@ def configure(conf):
     # Save a baseline environment that we'll use for ARM environments
     base_env = conf.env
 
-    handle_configure_options(conf)
-
     Logs.pprint('CYAN', 'Configuring arm_firmware environment')
     conf.setenv('', base_env)
-    conf.load('pebble_arm_gcc', tooldir='waftools')
+    conf.load('pebble_arm_gcc', tooldir='tools/waf')
+    # Select the C library (see lib/c/Kconfig) once the arch flags are set:
+    # picolibc-from-source is built for that exact multilib.
+    conf.load('libc', tooldir='tools/waf')
 
     Logs.pprint('CYAN', 'Configuring unit test environment')
     conf.setenv('local', unit_test_env)
 
     # Strip CONFIG_* DEFINES mirrored from the configure-time board: each test
     # selects its own simulated platform (asterix / obelix / gabbro) and injects
-    # the matching BOARD_FAMILY/PLATFORM/SCREEN_COLOR_DEPTH_BITS itself, so the
+    # the matching BOARD/PLATFORM/SCREEN_COLOR_DEPTH_BITS itself, so the
     # configure board's symbols would just collide with the per-test ones.
     conf.env.DEFINES = [d for d in conf.env.DEFINES
                         if not d.split('=', 1)[0].startswith('CONFIG_')]
@@ -344,7 +270,7 @@ def configure(conf):
     conf.find_program('ar')
 
     conf.load('clang')
-    conf.load('pebble_test', tooldir='waftools')
+    conf.load('pebble_test', tooldir='tools/waf')
 
     conf.env.CLAR_DIR = conf.path.make_node('tools/clar/').abspath()
     conf.env.CFLAGS = [ '-std=c11',
@@ -361,7 +287,10 @@ def configure(conf):
                         '-gdwarf-4',
                         '-O0',
                         '-fdata-sections',
-                        '-ffunction-sections' ]
+                        '-ffunction-sections',
+                        '-fno-common',
+                        '-ffp-contract=off',
+                        '-fexcess-precision=standard' ]
 
     # Reset LINKFLAGS so firmware-specific flags (e.g. --undefined=HAL_GetTick)
     # don't leak into the host test environment.
@@ -377,10 +306,10 @@ def configure(conf):
     conf.env.append_value('DEFINES', 'CLAR_FIXTURE_PATH="' +
                                      conf.path.make_node('tests/fixtures/').abspath() + '"')
 
-    conf.env.append_value('DEFINES', 'PBL_LOG_ENABLED')
+    conf.env.append_value('DEFINES', 'CONFIG_LOG=1')
 
     if conf.options.compile_commands:
-        conf.load('clang_compilation_database', tooldir='waftools')
+        conf.load('clang_compilation_database', tooldir='tools/waf')
 
         if not os.path.lexists('compile_commands.json'):
             filename = 'compile_commands.json'
@@ -405,6 +334,228 @@ def stop_build_timer(ctx):
         fout.write(str(int(round(t.total_seconds()))))
 
 
+def _link_firmware(bld, sources):
+    fw_linkflags = ['-Wl,--cref',
+                    '-Wl,-Map=pebbleos.map',
+                    '-Wl,--gc-sections',
+                    '-Wl,--undefined=uxTopUsedPriority',
+                    '-Wl,--build-id=sha1',
+                    '-Wl,--sort-section=alignment',
+                    '-Wl,--print-memory-usage']
+
+    # C library link flags (-nostdlib / -specs=...), selected by lib/c via
+    # tools/waf/libc.py. malloc/free are always redirected to pbl_malloc.
+    fw_linkflags.extend(bld.env.LIBC_LINKFLAGS)
+
+    fw_linkflags.extend(['-Wl,--wrap=malloc',
+                         '-Wl,--undefined=__wrap_malloc',
+                         '-Wl,--wrap=realloc',
+                         '-Wl,--undefined=__wrap_realloc',
+                         '-Wl,--wrap=calloc',
+                         '-Wl,--undefined=__wrap_calloc',
+                         '-Wl,--wrap=free',
+                         '-Wl,--undefined=__wrap_free'])
+
+    uses = ['applib',
+            'board',
+            'bt_driver',
+            'comm',
+            'console',
+            'debug',
+            'drivers',
+            'flash_region',
+            'freertos',
+            'fw_services',
+            'gcc',
+            'kernel',
+            'logging',
+            'mfg',
+            'popups',
+            'process_management',
+            'process_state',
+            'resource',
+            'shell',
+            'syscall',
+            'system',
+            'util',
+            'proto_schemas',
+            'libbtutil',
+            'libos',
+            'libutil',
+            'nanopb',
+            'pbl_includes',
+            'soc',
+            'speex',
+            'startup',
+            'tinymt32',
+            'upng']
+    uses.extend(bld.env.FW_APPS)
+    # C library use targets (the assert hook, _sbrk, the nano printf shim),
+    # selected by lib/c via tools/waf/libc.py.
+    uses.extend(bld.env.LIBC_USE)
+
+    if bld.env.CONFIG_MEMFAULT:
+        fw_linkflags.append('-Wl,--require-defined=g_memfault_build_id')
+        uses.append('memfault')
+
+    # Used by pblboot image tools; the C define mirrors the historical name.
+    bld.env.FIRMWARE_OFFSET = bld.env.CONFIG_FIRMWARE_OFFSET
+    bld.env.append_value('DEFINES', [f'FIRMWARE_OFFSET={bld.env.CONFIG_FIRMWARE_OFFSET}'])
+
+    # Build and link the firmware ELF
+    elf_node = bld.path.get_bld().make_node('pebbleos.elf')
+    x = bld.program(source=sources,
+                use=uses,
+                link_group=True,
+                lib=bld.env.LIBC_LIBS,
+                target=elf_node,
+                includes='fonts',
+                ldscript='src/fw/linker/pebbleos.ld',
+                linkflags=fw_linkflags)
+
+    x.env.append_value('LINKFLAGS', fw_linkflags)
+
+    if bld.env.CONFIG_PBLBOOT:
+        git_revision = tools.waf.gitinfo.get_git_revision(bld)
+        bld.env.PBLBOOT_PRIORITY = str(tools.waf.pblboot.boot_priority(
+            git_revision['TAG'], int(git_revision['TIMESTAMP'])))
+        nohdr_hex_node = elf_node.change_ext('.nohdr.hex')
+        bld(rule=tools.waf.objcopy.objcopy_hex, source=elf_node, target=nohdr_hex_node)
+        hex_node = elf_node.change_ext('.hex')
+        bld(rule=tools.waf.pblboot.insert_header_hex, source=nohdr_hex_node, target=hex_node)
+        nohdr_bin_node = elf_node.change_ext('.nohdr.bin')
+        bld(rule=tools.waf.objcopy.objcopy_bin, source=elf_node, target=nohdr_bin_node)
+        bin_node = elf_node.change_ext('.bin')
+        bld(rule=tools.waf.pblboot.insert_header_bin, source=nohdr_bin_node, target=bin_node)
+    else:
+        hex_node = elf_node.change_ext('.hex')
+        bld(rule=tools.waf.objcopy.objcopy_hex, source=elf_node, target=hex_node)
+        bin_node = elf_node.change_ext('.bin')
+        bld(rule=tools.waf.objcopy.objcopy_bin, source=elf_node, target=bin_node)
+
+    # Create the log_strings .elf and check the format specifier rules
+    if bld.env.CONFIG_LOG_HASHED:
+        fw_loghash_node = bld.path.get_bld().make_node('pebbleos_loghash_dict.json')
+        bld(rule=tools.waf.generate_log_strings_json.wafrule,
+            source=elf_node, target=fw_loghash_node, path=bld.path)
+        bld.LOGHASH_DICTS.append(fw_loghash_node)
+
+
+def _build_recovery(bld):
+    sources = bld.path.ant_glob('src/fw/*.c')
+    sources.extend(bld.path.ant_glob('src/fw/*.[sS]'))
+
+    sources.append(bld.path.get_bld().make_node('src/fw/builtin_resources.auto.c'))
+
+    _link_firmware(bld, sources)
+
+
+def _build_normal(bld):
+    # Generate timezone data
+    olson_txt = bld.srcnode.make_node('resources/normal/base/tzdata/timezones_olson.txt')
+    tzdata_bin = bld.bldnode.make_node('resources/normal/base/tzdata/tzdata.bin.reso')
+    bld(rule=tools.waf.generate_timezone_data.wafrule,
+        source=olson_txt,
+        target=tzdata_bin)
+
+    bld.DYNAMIC_RESOURCES.append(tzdata_bin)
+
+    sources = bld.path.ant_glob('src/fw/*.c')
+    sources.extend(bld.path.ant_glob('src/fw/*.[sS]'))
+
+    # Collect translatable strings from the firmware-core sources. apps,
+    # services and applib have their own .pot targets (merged below).
+    gettexts = []
+    gettexts.extend(bld.path.ant_glob('src/fw/**/*.c',
+                                     excl=['apps/**', 'services/**', 'applib/**']))
+    gettexts.extend(bld.path.ant_glob('src/fw/**/*.h'))
+    gettexts.extend(bld.path.ant_glob('src/fw/**/*.def'))
+
+    bld.gettext(source=gettexts, target=bld.path.get_bld().make_node('fw.pot'))
+    bld.msgcat(
+            source=[bld.path.get_bld().make_node('fw.pot'),
+                    bld.path.get_bld().make_node('src/fw/services/services.pot'),
+                    bld.path.get_bld().make_node('src/fw/applib/applib.pot'),
+                    bld.path.get_bld().make_node('src/fw/apps/apps.pot')],
+            target=bld.path.get_bld().make_node('pebbleos.pot'))
+
+    sources.append(bld.path.get_bld().make_node('src/fw/pebble.auto.c'))
+    sources.append(bld.path.get_bld().make_node('src/fw/resource/pfs_resource_table.auto.c'))
+    sources.append(bld.path.get_bld().make_node('src/fw/resource/timeline_resource_table.auto.c'))
+    sources.append(bld.path.get_bld().make_node('src/fw/builtin_resources.auto.c'))
+
+    _link_firmware(bld, sources)
+
+
+def _build_fw(bld):
+    bld.env.FW_APPS = []
+
+    # FIXME create applib_includes or something like that
+    fw_includes_use=['pbl_includes',
+                     'subsys_includes',
+                     'freertos_includes',
+                     'idl_includes',
+                     'nanopb_includes']
+
+    if bld.env.CONFIG_MEMFAULT:
+        fw_includes_use.append('memfault_includes')
+
+    if bld.env.CONFIG_SOC_NRF52:
+        fw_includes_use.append('hal_nordic')
+    elif bld.env.CONFIG_SOC_SF32LB52:
+        fw_includes_use.append('hal_sifli')
+
+    bld(export_includes=['src/fw',
+                         'src/fw/applib/vendor/uPNG',
+                         'src/fw/applib/vendor/tinflate'],
+        use=fw_includes_use,
+        name='fw_includes')
+
+    # Truncate the commit to fit in our versions struct. This may cause an ambiguous commit
+    # hash, but it's better than killing the build because the commit doesn't fit.
+    git_rev = tools.waf.gitinfo.get_git_revision(bld)
+    git_rev['COMMIT'] = git_rev['COMMIT'][:7]
+    git_rev['PATCH_VERBOSE_STRING']
+    if len(git_rev['TAG']) > 31:
+        Logs.warn('Git tag {} is too long, truncating'.format(git_rev['TAG']))
+        git_rev['TAG'] = git_rev['TAG'][:31]
+
+    bld(features='subst',
+        source='src/fw/git_version.auto.h.in',
+        target=bld.path.get_bld().make_node('src/fw/git_version.auto.h'),
+        **git_rev)
+
+    bld.recurse('subsys')
+    bld.recurse('src/fw/startup')
+    bld.recurse('src/fw/drivers')
+    bld.recurse('src/fw/board')
+    bld.recurse('src/fw/shell')
+    bld.recurse('src/fw/services')
+    bld.recurse('src/fw/applib')
+    bld.recurse('soc')
+    bld.recurse('src/fw/mfg')
+    bld.recurse('src/fw/comm')
+    bld.recurse('src/fw/console')
+    bld.recurse('src/fw/debug')
+    bld.recurse('src/fw/flash_region')
+    bld.recurse('src/fw/kernel')
+    bld.recurse('src/fw/popups')
+    bld.recurse('src/fw/process_management')
+    bld.recurse('src/fw/process_state')
+    bld.recurse('src/fw/resource')
+    bld.recurse('src/fw/syscall')
+    bld.recurse('src/fw/system')
+    bld.recurse('src/fw/util')
+    bld.recurse('src/fw/apps/core')
+
+    if bld.env.VARIANT == 'prf':
+        bld.recurse('src/fw/apps/prf')
+        _build_recovery(bld)
+    else:
+        bld.recurse('src/fw/apps')
+        _build_normal(bld)
+
+
 def build(bld):
     bld.DYNAMIC_RESOURCES = []
     bld.LOGHASH_DICTS = []
@@ -419,7 +570,7 @@ def build(bld):
     if bld.variant == 'test':
         bld.set_env(bld.all_envs['local'])
 
-    bld.load('file_name_c_define', tooldir='waftools')
+    bld.load('file_name_c_define', tooldir='tools/waf')
 
     bld.recurse('third_party/nanopb')
     bld.recurse('src/idl')
@@ -448,39 +599,32 @@ def build(bld):
         return
 
     # Do not enable stationary mode in PRF or release firmware
-    if (bld.env.VARIANT != 'prf' and not bld.env.CONFIG_QEMU and bld.env.NORMAL_SHELL != 'sdk'):
+    if (bld.env.VARIANT != 'prf' and not bld.env.CONFIG_QEMU and not bld.env.CONFIG_SHELL_SDK):
         bld.env.append_value('DEFINES', 'STATIONARY_MODE')
 
     if bld.variant == 'test':
         bld.recurse('third_party/nanopb')
-        bld.recurse('src/libbtutil')
-        bld.recurse('src/libos')
-        bld.recurse('src/libutil')
+        bld.recurse('lib')
+        bld.recurse('src')
         bld.recurse('tests')
         bld.recurse('tools')
         return
 
     if bld.variant == '' and bld.env.VARIANT != 'prf':
-        bld.recurse('stored_apps')
+        bld.recurse('apps/stored')
 
     bld.recurse('third_party')
-    bld.recurse('src/libbtutil')
-    bld.recurse('src/bluetooth-fw')
-    bld.recurse('src/libc')
-    bld.recurse('src/libos')
-    bld.recurse('src/libutil')
-    bld.recurse('src/fw')
+    bld.recurse('lib')
+    bld.recurse('src')
+    _build_fw(bld)
 
     # Generate resources. Leave this until the end so we collect all the env['DYNAMIC_RESOURCES']
     # values that the other build steps added.
     bld.recurse('resources')
 
-    # if we're not linking the firmware don't run these
-    if not bld.env.NO_LINK:
-        bld.add_post_fun(size_fw)
-        bld.add_post_fun(size_resources)
-        if 'PBL_LOGS_HASHED' in bld.env.DEFINES:
-            bld.add_post_fun(merge_loghash_dicts)
+    bld.add_post_fun(size_resources)
+    if bld.env.CONFIG_LOG_HASHED:
+        bld.add_post_fun(merge_loghash_dicts)
 
 
 def merge_loghash_dicts(bld):
@@ -488,37 +632,6 @@ def merge_loghash_dicts(bld):
 
     import log_hashing.newlogging
     log_hashing.newlogging.merge_loghash_dict_json_files(loghash_dict, bld.LOGHASH_DICTS)
-
-
-class SizeFirmware(BuildContext):
-    cmd = 'size_fw'
-    fun = 'size_fw'
-
-def size_fw(ctx):
-    """prints size information of the firmware"""
-
-    fw_elf = ctx.get_tintin_fw_node().change_ext('.elf')
-    if fw_elf is None:
-        ctx.fatal('No fw ELF found for size')
-
-    fw_bin = ctx.get_tintin_fw_node()
-    if fw_bin is None:
-        ctx.fatal('No fw BIN found for size')
-
-    import binutils
-    text, data, bss = binutils.size(fw_elf.abspath())
-    total = text + data
-    output = ('{:>7}    {:>7}    {:>7}    {:>7}    {:>7} filename\n'
-              '{:7}    {:7}    {:7}    {:7}    {:7x} tintin_fw.elf'.
-              format('text', 'data', 'bss', 'dec', 'hex', text, data, bss, total, total))
-    Logs.pprint('YELLOW', '\n' + output)
-
-    try:
-        space_left = _check_firmware_image_size(ctx, fw_bin.path_from(ctx.path))
-    except FirmwareTooLargeException as e:
-        ctx.fatal(str(e))
-    else:
-        Logs.pprint('CYAN', 'FW: ' + space_left)
 
 
 class SizeResources(BuildContext):
@@ -546,19 +659,17 @@ def size_resources(ctx):
         max_size = 256 * 1024
 
     pbpack_actual_size = os.path.getsize(pbpack_path.path_from(ctx.path))
-    bytes_free = max_size - pbpack_actual_size
 
-    from waflib import Logs
-    Logs.pprint('CYAN', 'Resources: %d/%d (%d free)\n' % (pbpack_actual_size, max_size, bytes_free))
+    bar_width = 20
+    filled = min(bar_width, round(bar_width * pbpack_actual_size / max_size))
+    Logs.pprint('CYAN', 'Resources: [%-*s] %6.2f%% (%d/%d bytes)\n'
+                % (bar_width, '#' * filled,
+                   100 * pbpack_actual_size / max_size,
+                   pbpack_actual_size, max_size))
 
     if pbpack_actual_size > max_size:
         ctx.fatal('Resources are too large for target board %d > %d'
                   % (pbpack_actual_size, max_size))
-
-
-def size(ctx):
-    from waflib import Options
-    Options.commands = ['size_fw', 'size_resources'] + Options.commands
 
 
 class test(BuildContext):
@@ -600,7 +711,7 @@ def docs_all(ctx):
 
 def _get_version_info(ctx):
     # FIXME: it's probably a better idea to lift board + version info from the .bin file... this can get out of sync!
-    git_revision = waftools.gitinfo.get_git_revision(ctx)
+    git_revision = tools.waf.gitinfo.get_git_revision(ctx)
     if git_revision['TAG'] != '?':
         version_string = git_revision['TAG']
         version_ts = int(git_revision['TIMESTAMP'])
@@ -616,13 +727,13 @@ def _make_bundle(ctx, fw_bin_path, fw_type='normal', board=None, resource_path=N
     import mkbundle
 
     if board is None:
-        board = ctx.env.BOARD
+        board = ctx.env.BOARD_NORMALIZED
 
     b = mkbundle.PebbleBundle()
 
     version_string, version_ts, version_commit = _get_version_info(ctx)
     slot = ctx.env.SLOT if fw_type == 'normal' and ctx.env.SLOT != -1 else None
-    out_file = ctx.get_pbz_node(fw_type, ctx.env.BOARD, version_string, slot).path_from(ctx.path)
+    out_file = ctx.get_pbz_node(fw_type, ctx.env.BOARD_NORMALIZED, version_string, slot).path_from(ctx.path)
 
     try:
         _check_firmware_image_size(ctx, fw_bin_path)
@@ -634,7 +745,7 @@ def _make_bundle(ctx, fw_bin_path, fw_type='normal', board=None, resource_path=N
 
     if resource_path is not None:
         b.add_resources(resource_path, version_ts)
-    if not ctx.env.CONFIG_RELEASE and 'PBL_LOGS_HASHED' in ctx.env.DEFINES:
+    if not ctx.env.CONFIG_RELEASE and ctx.env.CONFIG_LOG_HASHED:
         loghash_dict = ctx.path.get_bld().make_node(LOGHASH_OUT_PATH).abspath()
         b.add_loghash(loghash_dict)
 
@@ -662,9 +773,9 @@ def bundle(ctx):
     """bundles a firmware"""
 
     if ctx.env.VARIANT == 'prf':
-        _make_bundle(ctx, ctx.get_tintin_fw_node().path_from(ctx.path), fw_type='recovery')
+        _make_bundle(ctx, ctx.get_pebbleos_node().path_from(ctx.path), fw_type='recovery')
     else:
-        _make_bundle(ctx, ctx.get_tintin_fw_node().path_from(ctx.path),
+        _make_bundle(ctx, ctx.get_pebbleos_node().path_from(ctx.path),
                      resource_path=ctx.get_pbpack_node().path_from(ctx.path))
 
 
@@ -685,7 +796,7 @@ def qemu_image_micro(ctx):
     """creates the micro-flash image for qemu"""
     from intelhex import IntelHex
 
-    fw_hex = ctx.get_tintin_fw_node().change_ext('.hex')
+    fw_hex = ctx.get_pebbleos_node().change_ext('.hex')
     micro_flash_node = ctx.path.get_bld().make_node('qemu_micro_flash.bin')
     micro_flash_path = micro_flash_node.path_from(ctx.path)
     Logs.pprint('CYAN', 'Writing micro flash image to {}'.format(micro_flash_path))
@@ -735,13 +846,13 @@ def _check_firmware_image_size(ctx, path):
     firmware_size = os.path.getsize(path)
     # Determine flash and bootloader size so we can calculate the max firmware size
     if ctx.env.CONFIG_SOC_NRF52:
-        if ctx.env.VARIANT == 'prf' and not ctx.env.IS_MFG:
+        if ctx.env.VARIANT == 'prf' and not ctx.env.CONFIG_MFG:
             max_firmware_size = 512 * BYTES_PER_K
         else:
             # 1024k of flash and 32k bootloader
             max_firmware_size = (1024 - 32) * BYTES_PER_K
     elif ctx.env.CONFIG_SOC_SF32LB52:
-        if ctx.env.VARIANT == 'prf' and not ctx.env.IS_MFG:
+        if ctx.env.VARIANT == 'prf' and not ctx.env.CONFIG_MFG:
             max_firmware_size = 576 * BYTES_PER_K
         else:
             # 3072k of flash
@@ -757,6 +868,82 @@ def _check_firmware_image_size(ctx, path):
 
     return ('%d / %d bytes used (%d free)' %
             (firmware_size, max_firmware_size, (max_firmware_size - firmware_size)))
+
+
+def _create_runner(ctx, want_resources=False):
+    selected = ctx.options.runner or ctx.env.RUNNER
+    supported = ctx.env.SUPPORTED_RUNNERS or ([ctx.env.RUNNER] if ctx.env.RUNNER else [])
+
+    if not selected:
+        ctx.fatal('No runner available for board {}'.format(ctx.env.BOARD))
+    if selected not in supported:
+        ctx.fatal('Board {} does not support runner {}. Supported runners: {}'.format(
+                  ctx.env.BOARD, selected, ', '.join(supported) or 'none'))
+
+    resources_file = None
+    if want_resources and ctx.options.resources and ctx.env.VARIANT != 'prf':
+        resources_file = ctx.get_pbpack_node().path_from(ctx.path)
+
+    fw = ctx.get_pebbleos_node()
+    cfg = pebble_runners.RunnerConfig(
+        board_dir=os.path.join('boards', ctx.env.BOARD_NAME),
+        soc=ctx.env.CONFIG_SOC,
+        hex_file=fw.change_ext('.hex').path_from(ctx.path),
+        elf_file=fw.change_ext('.elf').path_from(ctx.path),
+        resources_file=resources_file,
+    )
+
+    try:
+        return pebble_runners.create(selected, cfg, ctx.options)
+    except pebble_runners.RunnerError as e:
+        ctx.fatal(str(e))
+
+
+class FlashCommand(BuildContext):
+    """flashes the firmware to a connected device"""
+    cmd = 'flash'
+    fun = 'flash'
+
+
+def flash(ctx):
+    fw_bin = ctx.get_pebbleos_node()
+    try:
+        space_left = _check_firmware_image_size(ctx, fw_bin.path_from(ctx.path))
+    except FirmwareTooLargeException as e:
+        ctx.fatal(str(e))
+    Logs.pprint('CYAN', 'FW: ' + space_left)
+
+    runner = _create_runner(ctx, want_resources=True)
+    try:
+        runner.run('flash')
+    except pebble_runners.RunnerError as e:
+        ctx.fatal(str(e))
+
+
+class RunCommand(BuildContext):
+    """resets and runs the firmware on a connected device"""
+    cmd = 'run'
+    fun = 'run'
+
+
+def run(ctx):
+    try:
+        _create_runner(ctx).run('run')
+    except pebble_runners.RunnerError as e:
+        ctx.fatal(str(e))
+
+
+class DebugCommand(BuildContext):
+    """attaches gdb to the target"""
+    cmd = 'debug'
+    fun = 'debug'
+
+
+def debug(ctx):
+    try:
+        _create_runner(ctx).run('debug')
+    except pebble_runners.RunnerError as e:
+        ctx.fatal(str(e))
 
 
 # Tool build commands

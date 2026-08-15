@@ -1,22 +1,21 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/task_watchdog.h>
 
-#include "drivers/periph_config.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/watchdog.h>
 #include "kernel/core_dump.h"
 #include "kernel/event_loop.h"
 #include "kernel/pebble_tasks.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "process_management/app_manager.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/system_task.h"
 #include "system/bootbits.h"
 #include "system/die.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -108,6 +107,7 @@ static void prv_log_stuck_task(RebootReason *reboot_reason, PebbleTask task) {
   reboot_reason->watchdog.stuck_task_lr = (uint32_t)current_lr;
 }
 
+#ifndef CONFIG_NO_WATCHDOG
 // TCB-only variant of prv_log_failed_message; no logging or FreeRTOS calls
 // so it's safe from above configMAX_SYSCALL_INTERRUPT_PRIORITY.
 static void prv_capture_stuck_task_info(RebootReason *reboot_reason) {
@@ -128,6 +128,7 @@ static void prv_capture_stuck_task_info(RebootReason *reboot_reason) {
     }
   }
 }
+#endif
 
 static void prv_log_failed_message(RebootReason *reboot_reason) {
   PBL_LOG_SYNC_WRN("Watchdog feed failed, last feed %dms ago, current status 0x%"PRIx16" mask 0x%"PRIx16,
@@ -175,7 +176,7 @@ static void prv_app_task_throttle_start(void) {
   // once to aid in debug
   if (strcmp(last_throttled_task, curr_task) != 0) {
     strcpy(last_throttled_task, curr_task);
-    PBL_LOG_INFO("Starting App Throttling for %s", curr_task);
+    PBL_LOG_WRN("Starting App Throttling for %s", curr_task);
   } else {
     PBL_LOG_DBG("Starting App Throttling for %s", curr_task);
   }
@@ -230,7 +231,7 @@ void WATCHDOG_FREERTOS_IRQHandler(void) {
     // If getting reset by the watchdog timer is imminent (it will reset the
     // CPU if not fed at least once every 7 seconds), then just coredump now
     if (s_ticks_since_successful_feed >= (6 * TIMER_INTERRUPT_HZ)) {
-#if !defined(NO_WATCHDOG)
+#if !defined(CONFIG_NO_WATCHDOG)
       reset_due_to_software_failure();
 #endif
     }
@@ -386,7 +387,7 @@ static void prv_task_watchdog_feed(void) {
     // after s_last_successful_feed_time), it likely means that we are stuck in
     // an ISR or low priority interrupts are disabled, so coredump now
     if (s_ticks_since_successful_feed >= WATCHDOG_COREDUMP_TICK_CNT) {
-#if !defined(NO_WATCHDOG)
+#if !defined(CONFIG_NO_WATCHDOG)
       // Low-pri handler didn't run; capture stuck_task_pc/lr ourselves so
       // Memfault has a real PC to fingerprint on.
       prv_capture_stuck_task_info(&reboot_reason);

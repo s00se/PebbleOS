@@ -1,29 +1,30 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/flash.h"
-#include "drivers/flash/flash_internal.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/flash/flash_internal.h>
 
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "drivers/flash/flash_impl.h"
-#include "drivers/task_watchdog.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/task_watchdog.h>
+#include <pbl/drivers/watchdog.h>
 #include "flash_region/flash_region.h"
-#include "kernel/util/stop.h"
-#include "os/mutex.h"
-#include "os/tick.h"
+#include "pbl/os/mutex.h"
+#include "pbl/os/tick.h"
 #include "process_management/worker_manager.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/analytics/analytics.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "kernel/util/sleep.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+
+PBL_LOG_MODULE_DEFINE(driver_flash, CONFIG_DRIVER_FLASH_LOG_LEVEL);
 
 #define MAX_ERASE_RETRIES (3)
 
@@ -113,9 +114,7 @@ void flash_read_bytes(uint8_t* buffer, uint32_t start_addr,
   if (s_erase.suspended) {
     new_timer_start(s_erase_suspend_timer, 5, prv_erase_suspend_timer_cb, NULL, 0);
   }
-  stop_mode_disable(InhibitorFlash);
   flash_impl_read_sync(buffer, start_addr, buffer_size);
-  stop_mode_enable(InhibitorFlash);
   mutex_unlock(s_flash_lock);
 }
 
@@ -129,7 +128,6 @@ void flash_expect_program_failure(bool expect_failure) {
 void flash_write_bytes(const uint8_t *buffer, uint32_t start_addr,
                        uint32_t buffer_size) {
   mutex_lock(s_flash_lock);
-  stop_mode_disable(InhibitorFlash);  // FIXME: PBL-18028
   prv_erase_pause();
   if (s_erase.suspended) {
     new_timer_start(s_erase_suspend_timer, 50, prv_erase_suspend_timer_cb, NULL, 0);
@@ -171,7 +169,6 @@ void flash_write_bytes(const uint8_t *buffer, uint32_t start_addr,
     //   mutex_lock(s_flash_lock);
     // }
   }
-  stop_mode_enable(InhibitorFlash);
   mutex_unlock(s_flash_lock);
 }
 
@@ -204,12 +201,10 @@ static uint32_t prv_flash_erase_start(uint32_t addr,
         flash_impl_get_typical_subsector_erase_duration_ms() :
         flash_impl_get_typical_sector_erase_duration_ms(),
   };
-  stop_mode_disable(InhibitorFlash);  // FIXME: PBL-18028
   status_t status = is_subsector? flash_impl_blank_check_subsector(addr)
                                 : flash_impl_blank_check_sector(addr);
   PBL_ASSERT(PASSED(status), "Blank check error: %" PRId32, status);
   if (status != S_FALSE) {
-    stop_mode_enable(InhibitorFlash);
     s_erase.in_progress = false;
     mutex_unlock(s_flash_lock);
     xSemaphoreGive(s_erase_semphr);
@@ -226,7 +221,6 @@ static uint32_t prv_flash_erase_start(uint32_t addr,
     mutex_unlock(s_flash_lock);
     return (s_erase.expected_duration * 7 / 8);
   } else {
-    stop_mode_enable(InhibitorFlash);
     s_erase.in_progress = false;
     mutex_unlock(s_flash_lock);
     xSemaphoreGive(s_erase_semphr);
@@ -258,7 +252,6 @@ static uint32_t prv_flash_erase_poll(void) {
   }
 
   if (erase_finished) {
-    stop_mode_enable(InhibitorFlash);
     s_erase.in_progress = false;
   }
   mutex_unlock(s_flash_lock);
@@ -524,7 +517,7 @@ const FlashSecurityRegisters *flash_security_registers_info(void) {
   return flash_impl_security_registers_info();
 }
 
-#ifdef RECOVERY_FW
+#ifdef CONFIG_RECOVERY_FW
 status_t flash_lock_security_register(uint32_t addr) {
   status_t status;
 
@@ -534,7 +527,7 @@ status_t flash_lock_security_register(uint32_t addr) {
 
   return status;
 }
-#endif // RECOVERY_FW
+#endif // CONFIG_RECOVERY_FW
 
 #include "console/prompt.h"
 void command_flash_unprotect(void) {

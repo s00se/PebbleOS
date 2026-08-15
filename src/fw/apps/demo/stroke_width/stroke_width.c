@@ -10,12 +10,12 @@
 #include "applib/pbl_std/pbl_std.h"
 #include "applib/graphics/graphics.h"
 #include "applib/graphics/gtypes.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "applib/ui/app_window_stack.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #define STEP_ROTATION_ANGLE (TRIG_MAX_ANGLE / 360) // 1 degree
 #define MIN_OPS 0

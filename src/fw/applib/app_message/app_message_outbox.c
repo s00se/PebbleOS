@@ -8,9 +8,9 @@
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/comm_session/session.h"
 #include "syscall/syscall.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 static void prv_outbox_prepare(AppMessageCtxOutbox *outbox);
 

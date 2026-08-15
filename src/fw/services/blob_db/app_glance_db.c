@@ -6,19 +6,21 @@
 #include "pbl/services/blob_db/app_glance_db_private.h"
 
 #include "applib/app_glance.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
-#include "os/mutex.h"
+#include "pbl/os/mutex.h"
 #include "resource/resource_ids.auto.h"
 #include "process_management/app_install_manager.h"
 #include "pbl/services/app_cache.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/settings/settings_file.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 #include "util/units.h"
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 #define SETTINGS_FILE_NAME "appglancedb"
 //! The defines below calculate `APP_GLANCE_DB_MAX_USED_SIZE` which is the actual minimum space we

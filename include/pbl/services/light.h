@@ -31,6 +31,15 @@ void light_button_pressed(void);
 //! to be called by the launcher on a button up event
 void light_button_released(void);
 
+//! @internal
+//! to be called on touch finger-down; mirrors a button press (coalesced).
+void light_touch_down(void);
+
+//! @internal
+//! to be called on liftoff and on app teardown to release a light_touch_down()
+//! hold. No-op if no touch is holding the backlight.
+void light_touch_up(void);
+
 //! @copydoc app_light_enable
 void light_enable(bool enable);
 
@@ -72,8 +81,12 @@ void light_toggle_enabled(void);
 //! @internal
 void light_toggle_ambient_sensor_enabled(void);
 
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
 //! @internal
-void light_toggle_dynamic_intensity_enabled(void);
+//! Set the dynamic backlight mode and briefly turn the light on so the user
+//! sees the effect.
+void light_set_dynamic_mode(BacklightDynamicMode mode);
+#endif
 
 //! Switches for temporary disabling backlight (ie: low power mode)
 void light_allow(bool allowed);
@@ -86,6 +99,12 @@ uint8_t light_get_current_brightness_percent(void);
 //! @return true if the backlight is currently on in any form (on, timed, or
 //! fading out). Returns false only when the backlight is fully off.
 bool light_is_on(void);
+
+//! Ambient light level in lux: screen-compensated and converted with the
+//! board's calibration (raw counts pass through unchanged on boards without
+//! lux coefficients). Served from a short-lived cache; while the backlight is
+//! on, the last pre-backlight value is returned.
+uint32_t light_get_ambient_lux(void);
 
 //!   @} // group Light
 //! @} // group UI

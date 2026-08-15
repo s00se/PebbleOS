@@ -9,24 +9,24 @@
 #include "applib/ui/text_layer.h"
 #include "applib/ui/window_private.h"
 #include "apps/prf/mfg_test_result.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "process_management/pebble_process_md.h"
 #include "process_state/app_state/app_state.h"
 #include "pbl/services/evented_timer.h"
 #include "pbl/services/light.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include <stdint.h>
 #include <stdio.h>
 
 // ALS pass/fail range (adjust these values based on your test requirements)
-#ifdef CONFIG_BOARD_FAMILY_OBELIX
+#ifdef CONFIG_BOARD_OBELIX
 #define ALS_MIN_VALUE 100
 #define ALS_MAX_VALUE 250
-#elif defined(CONFIG_BOARD_FAMILY_GETAFIX)
-#define ALS_MIN_VALUE 1000
-#define ALS_MAX_VALUE 3000
+#elif defined(CONFIG_BOARD_GETAFIX)
+#define ALS_MIN_VALUE 8500
+#define ALS_MAX_VALUE 11500
 #else
 #define ALS_MIN_VALUE 0
 #define ALS_MAX_VALUE 65535

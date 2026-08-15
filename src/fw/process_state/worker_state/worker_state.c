@@ -8,7 +8,7 @@
 #include "process_state/worker_state/worker_state.h"
 #include "syscall/syscall.h"
 #include "tinymt32.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 typedef struct {
   Heap heap;
@@ -131,7 +131,7 @@ HealthServiceState *worker_state_get_health_service_state(void) {
 
 // ===================================================================================================
 // Serial Commands
-#ifdef MALLOC_INSTRUMENTATION
+#ifdef CONFIG_MALLOC_INSTRUMENTATION
 void command_dump_malloc_worker(void) {
   heap_dump_malloc_instrumentation_to_dbgserial(worker_state_get_heap());
 }

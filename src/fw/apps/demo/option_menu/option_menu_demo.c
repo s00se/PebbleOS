@@ -10,8 +10,8 @@
 #include "kernel/pbl_malloc.h"
 #include "process_state/app_state/app_state.h"
 #include "resource/resource_ids.auto.h"
-#include "system/logging.h"
-#include "util/size.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
 
 const char *s_strings[] = {
   "One",

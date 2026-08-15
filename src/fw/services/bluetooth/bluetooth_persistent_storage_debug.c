@@ -6,13 +6,13 @@
 #include "console/prompt.h"
 #include "pbl/services/shared_prf_storage/shared_prf_storage_debug.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
-#include "util/string.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/string.h"
 
 #include <bluetooth/bluetooth_types.h>
 #include <bluetooth/sm_types.h>
-#include <btutil/bt_device.h>
-#include <btutil/sm_util.h>
+#include <pbl/btutil/bt_device.h>
+#include <pbl/btutil/sm_util.h>
 
 //
 // Strictly for debug. Pretty-prints most of the pairing information saved
@@ -91,7 +91,7 @@ void bluetooth_persistent_storage_debug_dump_root_keys(SM128BitKey *irk, SM128Bi
 
 extern void bluetooth_persistent_storage_dump_contents(void);
 void command_gapdb_dump(void) {
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
   bluetooth_persistent_storage_dump_contents();
 #endif
   shared_prf_storage_dump_contents();

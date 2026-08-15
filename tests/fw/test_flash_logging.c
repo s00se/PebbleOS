@@ -5,9 +5,9 @@
 
 #include "flash_region/flash_region.h"
 #include "debug/flash_logging.h"
-#include "util/math.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/math.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 #include "fake_spi_flash.h"
 #include "fake_system_task.h"
@@ -20,7 +20,7 @@
 #include "stubs_sleep.h"
 #include "stubs_task_watchdog.h"
 
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <stdbool.h>

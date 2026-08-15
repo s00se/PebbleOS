@@ -4,20 +4,20 @@
 #include <nrfx_i2s.h>
 
 #include "board/board.h"
-#include "drivers/audio.h"
-#include "drivers/flash/qspi_flash_definitions.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/i2c/definitions.h"
-#include "drivers/mic.h"
-#include "drivers/mic/nrf5/pdm_definitions.h"
-#include "drivers/speaker/nrf5/da7212_definitions.h"
-#include "drivers/i2c/nrf5.h"
-#include "drivers/uart/nrf5.h"
-#include "drivers/pmic/npm1300.h"
-#include "drivers/pwm.h"
-#include "drivers/qspi_definitions.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/flash/qspi_flash_definitions.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/i2c/definitions.h>
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/nrf5/pdm_definitions.h>
+#include <pbl/drivers/speaker/nrf5/da7212_definitions.h>
+#include <pbl/drivers/i2c/nrf5.h>
+#include <pbl/drivers/uart/nrf5.h>
+#include <pbl/drivers/pmic/npm1300.h>
+#include <pbl/drivers/pwm.h>
+#include <pbl/drivers/qspi_definitions.h>
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "kernel/util/sleep.h"
 #include "system/passert.h"
@@ -178,12 +178,36 @@ static const I2CSlavePort I2C_SLAVE_BMP390 = {
 
 I2CSlavePort *const I2C_BMP390 = &I2C_SLAVE_BMP390;
 
-static const I2CSlavePort I2C_SLAVE_LSM6D = {
-    .bus = &I2C_IIC2_BUS,
-    .address = 0x6A << 1,
+static LSM6DSOState s_lsm6dso_state;
+
+static const LSM6DSOConfig s_lsm6dso_config = {
+    .state = &s_lsm6dso_state,
+    .i2c = {
+        .bus = &I2C_IIC2_BUS,
+        .address = 0x6A << 1,
+    },
+    .int1 = {
+        .peripheral = NRFX_GPIOTE_INSTANCE(0),
+        .channel = 7,
+        .gpio_pin = NRF_GPIO_PIN_MAP(1, 13),
+    },
+    .int1_in = {
+        .gpio = NRF5_GPIO_RESOURCE_EXISTS,
+        .gpio_pin = NRF_GPIO_PIN_MAP(1, 13),
+    },
+    .axis_map = {
+        [AXIS_X] = 1,
+        [AXIS_Y] = 0,
+        [AXIS_Z] = 2,
+    },
+    .axis_dir = {
+        [AXIS_X] = 1,
+        [AXIS_Y] = 1,
+        [AXIS_Z] = 1,
+    },
 };
 
-I2CSlavePort *const I2C_LSM6D = &I2C_SLAVE_LSM6D;
+const LSM6DSOConfig *const LSM6DSO = &s_lsm6dso_config;
 
 IRQ_MAP_NRFX(I2S, nrfx_i2s_0_irq_handler);
 

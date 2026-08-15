@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "applib/graphics/graphics_circle.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 
 #include "clar.h"
 #include "pebble_asserts.h"
@@ -23,7 +23,7 @@ bool graphics_release_frame_buffer(GContext* ctx, GBitmap* buffer) {
   return true;
 }
 
-void graphics_draw_pixel(){}
+void graphics_draw_pixel(GContext* ctx, GPoint point) {}
 void graphics_fill_rect(GContext* ctx, const GRect *rect) {}
 void graphics_private_draw_horizontal_line(){}
 void graphics_private_draw_vertical_line(){}

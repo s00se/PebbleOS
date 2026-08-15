@@ -7,9 +7,9 @@
 //! to exist because systems that were common to both PRF and normal firmware wouldn't try to
 //! use something that only exists in normal, but we're not quite there yet.
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "board/board.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 #include "kernel/events.h"
 #include "popups/crashed_ui.h"
 #include "popups/notifications/notification_window.h"
@@ -219,6 +219,14 @@ bool touch_is_globally_enabled(void) {
 }
 
 void touch_set_globally_enabled(bool enable) {
+}
+
+
+bool touch_navigation_menu_is_enabled(void) {
+  return false;
+}
+
+void touch_set_navigation_menu_enabled(bool enable) {
 }
 
 bool bt_persistent_storage_get_airplane_mode_enabled(void) {

@@ -13,16 +13,18 @@
 #include "pbl/services/new_timer/new_timer.h"
 #include "pbl/services/data_logging/data_logging_service.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 #include "util/legacy_checksum.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <inttypes.h>
 
 #include "FreeRTOS.h"
 #include "timers.h"
+
+PBL_LOG_MODULE_DECLARE(service_data_logging, CONFIG_SERVICE_DATA_LOGGING_LOG_LEVEL);
 
 typedef struct {
   ListNode list_node;

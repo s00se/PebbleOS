@@ -1,11 +1,13 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 
 #include "board/board.h"
-#include "drivers/i2c.h"
-#include "system/passert.h"
+#include <pbl/drivers/i2c.h>
+#include <pbl/logging/logging.h>
+
+PBL_LOG_MODULE_DEFINE(driver_backlight_aw2016, CONFIG_DRIVER_BACKLIGHT_LOG_LEVEL);
 
 #define AW2016_REG_RSTR 0x00U
 #define AW2016_REG_RSTR_CHIP_ID 0x09U
@@ -75,17 +77,22 @@ static bool prv_configure_registers(void) {
 }
 
 void backlight_init(void) {
-  uint8_t value;
+  uint8_t value = 0;
   bool ret;
 
+  // A wedged AW2016 or I2C bus must not be fatal here: asserting on boot bricks
+  // the watch into a recovery/factory-reset loop. A dead backlight is preferable.
   ret = prv_read_register(AW2016_REG_RSTR, &value);
-  PBL_ASSERTN(ret && (value == AW2016_REG_RSTR_CHIP_ID));
+  if (!ret || (value != AW2016_REG_RSTR_CHIP_ID)) {
+    PBL_LOG_ERR("AW2016 not detected (i2c_ok=%d id=0x%02x); backlight disabled", ret, value);
+    return;
+  }
 
   ret = prv_write_register(AW2016_REG_RSTR, AW2016_REG_RSTR_RST);
-  PBL_ASSERTN(ret);
-
-  ret = prv_write_register(AW2016_REG_GCR1, AW2016_REG_GCR1_CHGDIS_DIS);
-  PBL_ASSERTN(ret);
+  ret &= prv_write_register(AW2016_REG_GCR1, AW2016_REG_GCR1_CHGDIS_DIS);
+  if (!ret) {
+    PBL_LOG_ERR("AW2016 init write failed (i2c)");
+  }
 }
 
 void backlight_set_brightness(uint8_t brightness) {
@@ -105,13 +112,18 @@ void backlight_set_brightness(uint8_t brightness) {
   if (brightness == 0U) {
     ret = prv_write_register(AW2016_REG_GCR1,
                              AW2016_REG_GCR1_CHGDIS_DIS | AW2016_REG_GCR1_CHIPEN_DIS);
-    PBL_ASSERTN(ret);
+    if (!ret) {
+      PBL_LOG_ERR("AW2016 disable failed (i2c)");
+    }
   } else {
     if (previous_brightness == 0U) {
       ret = prv_write_register(AW2016_REG_GCR1,
                                AW2016_REG_GCR1_CHGDIS_DIS | AW2016_REG_GCR1_CHIPEN_EN);
       ret &= prv_configure_registers();
-      PBL_ASSERTN(ret);
+      if (!ret) {
+        PBL_LOG_ERR("AW2016 enable failed (i2c)");
+        return;
+      }
     }
 
     backlight_set_color(s_rgb_current_color);
@@ -130,13 +142,21 @@ void backlight_set_color(uint32_t rgb_color) {
   ret &= prv_write_register(AW2016_REG_PWM2, green);
   ret &= prv_write_register(AW2016_REG_PWM3, blue);
 
-  PBL_ASSERTN(ret);
+  if (!ret) {
+    PBL_LOG_ERR("AW2016 set color failed (i2c)");
+    return;
+  }
 
   s_rgb_current_color = rgb_color;
 }
 
 uint32_t backlight_get_color(void) {
   return s_rgb_current_color;
+}
+
+uint8_t backlight_get_level(uint8_t brightness) {
+  // 255-step current control: every brightness value is distinct.
+  return brightness;
 }
 
 void backlight_refresh(void) {
@@ -149,7 +169,10 @@ void backlight_refresh(void) {
   ret = prv_write_register(AW2016_REG_GCR1,
                            AW2016_REG_GCR1_CHGDIS_DIS | AW2016_REG_GCR1_CHIPEN_EN);
   ret &= prv_configure_registers();
-  PBL_ASSERTN(ret);
+  if (!ret) {
+    PBL_LOG_ERR("AW2016 refresh failed (i2c)");
+    return;
+  }
 
   backlight_set_color(s_rgb_current_color);
 }

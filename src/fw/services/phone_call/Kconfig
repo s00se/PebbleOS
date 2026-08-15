@@ -5,3 +5,11 @@ config SERVICE_PHONE_CALL
     bool "Phone call"
     help
       Phone call (incoming/outgoing) service.
+
+if SERVICE_PHONE_CALL
+
+module = SERVICE_PHONE_CALL
+module-str = Phone call
+source "subsys/logging/Kconfig.template.log_level"
+
+endif

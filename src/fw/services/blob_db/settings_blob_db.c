@@ -10,14 +10,17 @@
 #include "pbl/services/comm_session/session.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/settings/settings_file.h"
+#include "shell/prefs.h"
 #include "shell/prefs_private.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/services/system_task.h"
-#include "util/list.h"
-#include "util/size.h"
+#include "pbl/util/list.h"
+#include "pbl/util/size.h"
 
 #include <string.h>
+
+PBL_LOG_MODULE_DECLARE(service_blob_db, CONFIG_SERVICE_BLOB_DB_LOG_LEVEL);
 
 //! Notification preferences file name and size
 #define NOTIF_PREFS_FILE_NAME "notifpref"
@@ -63,15 +66,16 @@ static const char *s_syncable_settings[] = {
   "lightTouch",
   "lightAmbientThreshold",
 #ifdef CONFIG_DYNAMIC_BACKLIGHT
-  "lightDynamicIntensity",
-  "dynBacklightMinThreshold",
+  "lightDynamicMode",
 #endif
+  "lightPreset",
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
   "lightColor",
 #endif
 
   // Language preferences
   "langEnglish",
+  "language",
 
   // App preferences
   "qlUp",
@@ -91,7 +95,9 @@ static const char *s_syncable_settings[] = {
   // Timeline preferences
   "timelineQuickViewEnabled",
   "timelineQuickViewBeforeTimeMin",
+#if TIMELINE_PEEK_WATCHFACE_FIT_SUPPORTED
   "timelineQuickViewWatchfaceFit",
+#endif
   "timelineSettingsOpened",
 
   // Activity preferences
@@ -276,7 +282,7 @@ void settings_blob_db_init(void) {
   settings_file_set_change_callback(prv_settings_change_callback);
 
   s_initialized = true;
-  PBL_LOG_INFO("Settings BlobDB initialized (%u whitelisted settings)",
+  PBL_LOG_DBG("Settings BlobDB initialized (%u whitelisted settings)",
           (unsigned int) s_num_syncable_settings);
 }
 

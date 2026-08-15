@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2024 Google LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
 
 #include "pulse_protocol_impl.h"
 #include "pulse2_reliable_retransmit_timer.h"
@@ -15,7 +15,7 @@
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/system_task.h"
 #include "system/passert.h"
-#include <util/attributes.h>
+#include <pbl/util/attributes.h>
 #include <util/net.h>
 
 #include "FreeRTOS.h"

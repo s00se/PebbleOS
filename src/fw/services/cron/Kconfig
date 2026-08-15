@@ -5,3 +5,11 @@ config SERVICE_CRON
     bool "Cron"
     help
       Cron-like scheduler for periodic jobs.
+
+if SERVICE_CRON
+
+module = SERVICE_CRON
+module-str = Cron
+source "subsys/logging/Kconfig.template.log_level"
+
+endif

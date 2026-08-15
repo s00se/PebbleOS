@@ -4,15 +4,17 @@
 #include "pbl/services/evented_timer.h"
 
 #include "kernel/events.h"
-#include "os/tick.h"
-#include "os/mutex.h"
+#include "pbl/os/tick.h"
+#include "pbl/os/mutex.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/new_timer/new_timer.h"
 #include "system/passert.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "process_management/app_manager.h"
+
+PBL_LOG_MODULE_DEFINE(service_evented_timer, CONFIG_SERVICE_EVENTED_TIMER_LOG_LEVEL);
 
 typedef struct EventedTimer {
   ListNode list_node;

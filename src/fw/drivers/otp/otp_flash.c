@@ -1,8 +1,10 @@
 /* SPDX-FileCopyrightText: 2025 Core Devices LLC */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#include "drivers/otp.h"
-#include "drivers/flash.h"
+#include <string.h>
+
+#include <pbl/drivers/otp.h>
+#include <pbl/drivers/flash.h>
 
 #define FLASH_ERASE_VAL 0xFFU
 #define OTP_SLOT_SIZE 32U
@@ -102,6 +104,11 @@ OtpWriteResult otp_write_slot(const uint8_t index, const char *value) {
     if (ret != S_SUCCESS) {
       return OtpWriteFailCorrupt;
     }
+  }
+
+  existing_val = otp_get_slot(index);
+  if ((existing_val == NULL) || (memcmp(existing_val, value, len + 1) != 0)) {
+    return OtpWriteFailCorrupt;
   }
 
   return OtpWriteSuccess;

@@ -11,8 +11,8 @@
 #include "applib/app_logging.h"
 #include "applib/app_timer.h"
 #include "applib/event_service_client.h"
-#include "util/trig.h"
-#include "drivers/mag.h"
+#include "pbl/util/trig.h"
+#include <pbl/drivers/mag.h>
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
 #include "syscall/syscall.h"

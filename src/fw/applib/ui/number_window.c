@@ -8,12 +8,12 @@
 #include "applib/applib_malloc.auto.h"
 #include "kernel/ui/kernel_ui.h"
 #include "kernel/ui/system_icons.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 #include <stdio.h>
 #include <limits.h>
 
-#if RECOVERY_FW || MANUFACTURING_FW
+#if defined(CONFIG_RECOVERY_FW) || defined(CONFIG_MFG)
 #define NUMBER_FONT_KEY FONT_KEY_GOTHIC_24_BOLD
 #else
 #define NUMBER_FONT_KEY FONT_KEY_BITHAM_34_MEDIUM_NUMBERS

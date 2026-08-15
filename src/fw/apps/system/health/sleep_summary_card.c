@@ -15,9 +15,9 @@
 #include "kernel/pbl_malloc.h"
 #include "resource/resource_ids.auto.h"
 #include "pbl/services/i18n/i18n.h"
-#include "system/logging.h"
-#include "util/size.h"
-#include "util/string.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 // Compile-time display offset calculations
 #define HEALTH_X_OFFSET ((DISP_COLS - LEGACY_2X_DISP_COLS) / 2)
@@ -164,7 +164,11 @@ static void prv_render_icon(GContext *ctx, Layer *base_layer) {
 static void prv_render_current_sleep_text(GContext *ctx, Layer *base_layer) {
   HealthSleepSummaryCardData *data = layer_get_data(base_layer);
 
-  const int y = PBL_IF_RECT_ELSE(PBL_IF_BW_ELSE(85, 83), 88) + HEALTH_Y_OFFSET;
+  // Mirror the pill's downshift at half the offset so the step count and
+  // pill stay visually balanced. Zero on legacy-sized displays where
+  // HEALTH_Y_OFFSET itself is 0.
+  const int y = PBL_IF_RECT_ELSE(PBL_IF_BW_ELSE(85, 83), 88) + HEALTH_Y_OFFSET
+                + HEALTH_Y_OFFSET / 6;
   const GRect rect = GRect(0, y, base_layer->bounds.size.w, 40);
 
   const int current_sleep = health_data_current_sleep_get(data->health_data);

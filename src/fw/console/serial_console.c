@@ -9,11 +9,10 @@
 #include "prompt.h"
 
 #include "console/pulse_internal.h"
-#include "drivers/mic.h"
-#include "drivers/watchdog.h"
-#include "kernel/util/stop.h"
-#include "os/tick.h"
-#include "system/logging.h"
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/watchdog.h>
+#include "pbl/os/tick.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 SerialConsoleState s_serial_console_state = SERIAL_CONSOLE_STATE_LOGGING;
@@ -22,7 +21,7 @@ static bool s_serial_console_initialized;
 static bool s_prompt_enabled = false;
 
 static void logging_handle_character(char c, bool* should_context_switch) {
-#ifdef DISABLE_PROMPT
+#ifndef CONFIG_PROMPT
   return;
 #endif
   // Remember, you're in an interrupt here!
@@ -87,19 +86,10 @@ void serial_console_set_state(SerialConsoleState new_state) {
     return;
   }
 
-#if !PULSE_EVERYWHERE
-  if (new_state == SERIAL_CONSOLE_STATE_LOGGING) {
-    stop_mode_enable(InhibitorDbgSerial);
-    dbgserial_enable_rx_exti();
-  } else if (s_serial_console_state == SERIAL_CONSOLE_STATE_LOGGING) {
-    stop_mode_disable(InhibitorDbgSerial);
-  }
-#endif
-
   s_serial_console_state = new_state;
 
   switch (s_serial_console_state) {
-#if !DISABLE_PROMPT
+#ifdef CONFIG_PROMPT
     case SERIAL_CONSOLE_STATE_PROMPT:
       dbgserial_register_character_callback(prompt_handle_character);
       dbgserial_set_rx_dma_enabled(false);

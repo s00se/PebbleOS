@@ -6,11 +6,11 @@
 
 #include "applib/app_logging.h"
 #include "applib/health_service_private.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/pbl_malloc.h"
 #include "syscall/syscall.h"
-#include "system/logging.h"
-#include "util/math.h"
+#include <pbl/logging/logging.h>
+#include "pbl/util/math.h"
 #include "util/stats.h"
 #include "util/time/time.h"
 
@@ -231,6 +231,10 @@ int32_t health_data_steps_get_current_average(HealthData *health_data) {
         (today_min / k_minutes_per_step_avg) * k_minutes_per_step_avg;
   }
   return health_data->current_step_average;
+}
+
+int32_t health_data_steps_get_current_average_minute(HealthData *health_data) {
+  return health_data->step_average_last_updated_time;
 }
 
 int32_t health_data_steps_get_cur_wday_average(HealthData *health_data) {

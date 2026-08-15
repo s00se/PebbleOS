@@ -1,9 +1,4 @@
-from waftools.pebble_test import clar
-
-clar(ctx,
-    sources_ant_glob =
-        " src/fw/kernel/pulse_logging.c",
-    test_sources_ant_glob="test_pulse_logging.c")
+from tools.waf.pebble_test import clar
 
 clar(ctx,
     sources_ant_glob =

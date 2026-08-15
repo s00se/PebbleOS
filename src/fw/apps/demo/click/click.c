@@ -8,9 +8,9 @@
 #include "applib/ui/ui.h"
 #include "applib/ui/window.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <stdio.h>
 

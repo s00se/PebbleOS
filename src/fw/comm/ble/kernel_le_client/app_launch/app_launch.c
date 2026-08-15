@@ -6,7 +6,7 @@
 #include "comm/ble/gatt_client_operations.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/comm_session/session.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 //! See https://pebbletechnology.atlassian.net/wiki/display/DEV/Pebble+GATT+Services
@@ -46,17 +46,6 @@ void app_launch_handle_service_removed(
 
 bool app_launch_can_handle_characteristic(BLECharacteristic characteristic) {
   return (characteristic == s_app_launch_characteristic);
-}
-
-// -------------------------------------------------------------------------------------------------
-
-void app_launch_handle_read_or_notification(BLECharacteristic characteristic, const uint8_t *value,
-                                            size_t value_length, BLEGATTError error) {
-  // If error is BLEGATTErrorSuccess, it means the Pebble app responded.
-  PBL_LOG_INFO("App relaunch result: %u", error);
-  if (error == BLEGATTErrorSuccess) {
-  } else {
-  }
 }
 
 // -------------------------------------------------------------------------------------------------

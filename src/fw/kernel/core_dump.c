@@ -12,20 +12,24 @@
  * driver, etc.
  */
 
+#include <stdlib.h>
 #include <string.h>
+
+// itoa is a Pebble/newlib extension; newlib hides it under strict-ANSI
+// (-std=c11), so declare it explicitly for non-Pebble libcs.
+extern char *itoa(int value, char *str, int base);
 
 #include "kernel/core_dump.h"
 #include "kernel/core_dump_private.h"
 
 #include "console/dbgserial.h"
-#include "kernel/logging_private.h"
-#include "kernel/pulse_logging.h"
+#include "logging/logging_private.h"
+#include "logging/pulse_logging.h"
 
-#include "drivers/flash.h"
-#include "drivers/mpu.h"
-#include "drivers/spi.h"
-#include "drivers/watchdog.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/mpu.h>
+#include <pbl/drivers/watchdog.h>
+#include <pbl/drivers/rtc.h>
 
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
@@ -37,15 +41,15 @@
 #include "system/bootbits.h"
 #include "system/passert.h"
 #include "system/reset.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/version.h"
 
-#include "util/attributes.h"
-#include "util/build_id.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/build_id.h"
+#include "pbl/util/math.h"
 #include "util/net.h"
-#include "util/size.h"
-#include "util/string.h"
+#include "pbl/util/size.h"
+#include "pbl/util/string.h"
 
 #include <cmsis_core.h>
 
@@ -162,7 +166,7 @@ static void prv_debug_str(const char* msg) {
 // NOTE: We are explicitly avoiding use of vsniprintf and cohorts to reduce our stack
 // requirements
 static void prv_debug_str_str(const char* msg, const char* s) {
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
   void *ctx = pulse_logging_log_sync_begin(LOG_LEVEL_ALWAYS, __FILE_NAME__, 0);
   pulse_logging_log_sync_append(ctx, msg);
   pulse_logging_log_sync_append(ctx, s);
@@ -192,7 +196,7 @@ static void prv_debug_str_int(const char* msg, uint32_t i, int base) {
     itoa(i, buffer, base);
   }
 
-#if PULSE_EVERYWHERE
+#ifdef CONFIG_PULSE_EVERYWHERE
   void *ctx = pulse_logging_log_sync_begin(LOG_LEVEL_ALWAYS, __FILE_NAME__, 0);
   pulse_logging_log_sync_append(ctx, msg);
   pulse_logging_log_sync_append(ctx, buffer);

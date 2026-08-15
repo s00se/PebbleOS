@@ -6,7 +6,7 @@
 #include "pbl/services/activity/activity_private.h"
 #include "pbl/services/activity/insights_settings.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "util/attributes.h"
+#include "pbl/util/attributes.h"
 
 #include <stdint.h>
 
@@ -115,6 +115,18 @@ static void prv_update_sleep_metrics(void) {
   s_data.metric_history[ActivityMetricSleepExitAtSeconds][0] =
                  time_util_get_minute_of_day(sleep_exit_utc) * SECONDS_PER_MINUTE;
   s_data.metric_history[ActivityMetricSleepTotalSeconds][0] = total_seconds;
+}
+
+
+time_t activity_sessions_prv_get_sleep_window_start_utc(time_t now_utc) {
+  time_t start_of_today_utc = time_util_get_midnight_of(now_utc);
+  int minute_of_day = time_util_get_minute_of_day(now_utc);
+  int last_sleep_second_of_day = ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY * SECONDS_PER_MINUTE;
+
+  if (minute_of_day < ACTIVITY_LAST_SLEEP_MINUTE_OF_DAY) {
+    return start_of_today_utc - (SECONDS_PER_DAY - last_sleep_second_of_day);
+  }
+  return start_of_today_utc + last_sleep_second_of_day;
 }
 
 
@@ -787,6 +799,14 @@ void test_activity_insights__sleep_summary_no_history(void) {
 }
 
 // ---------------------------------------------------------------------------------------
+// The "activation delay" insights (the day 1 / day 4 / day 10 "pebble health nag"
+// notifications) were removed from production in commit aaf2f45f3
+// ("services/normal/activity_insights: remove pebble health nag"), which deleted the
+// ActivationDelayInsight table and prv_do_activation_delay_insights() from
+// activity_insights.c. activity_insights_process_minute_data() therefore no longer pushes any
+// activation-delay notification. These cases now assert that contract: stepping the clock across
+// the windows that used to trigger the day 1 / day 4 / day 10 nags produces no ANCS
+// notifications.
 void test_activity_insights__activation_delay_insights_time_trigger(void) {
   time_t now = mktime(&s_init_time_tm);
   prv_set_activation_time(now);
@@ -799,30 +819,32 @@ void test_activity_insights__activation_delay_insights_time_trigger(void) {
   activity_insights_process_minute_data(now);
   cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 
-  now += 8 * SECONDS_PER_HOUR; // Jan 2 @ 6:00pm
+  now += 8 * SECONDS_PER_HOUR; // Jan 2 @ 6:00pm - used to fire the day 1 nag
   rtc_set_time(now);
   activity_insights_process_minute_data(now);
-  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 
   now += (3 * SECONDS_PER_DAY) + (2 * SECONDS_PER_HOUR); // Jan 5 @ 8:00pm
   rtc_set_time(now);
   activity_insights_process_minute_data(now);
-  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 
   s_health_app_opened_version = 1;
 
-  now += 30 * SECONDS_PER_MINUTE; // Jan 5 @ 8:30pm
+  now += 30 * SECONDS_PER_MINUTE; // Jan 5 @ 8:30pm - used to fire the day 4 nag
   rtc_set_time(now);
   activity_insights_process_minute_data(now);
-  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 
-  now += 6 * SECONDS_PER_DAY; // Jan 11 @ 8:30pm
+  now += 6 * SECONDS_PER_DAY; // Jan 11 @ 8:30pm - used to fire the day 10 nag
   rtc_set_time(now);
   activity_insights_process_minute_data(now);
-  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 3);
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 }
 
 // ---------------------------------------------------------------------------------------
+// See the note above: the activation-delay nag was removed in aaf2f45f3, so the 15-minute
+// retry window that used to fire the day 1 nag now produces no notification either.
 void test_activity_insights__activation_delay_insights_fifteen_interval_trigger(void) {
   time_t now = mktime(&s_init_time_tm);
   prv_set_activation_time(now);
@@ -838,7 +860,7 @@ void test_activity_insights__activation_delay_insights_fifteen_interval_trigger(
   now += (10 * SECONDS_PER_MINUTE); // Jan 2 @ 6:15pm
   rtc_set_time(now);
   activity_insights_process_minute_data(now);
-  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
 }
 
 // Make sure that when the watch resets, we retain state properly
@@ -900,4 +922,153 @@ void test_activity_insights__walk_session_power_cycle(void) {
   rtc_set_time(rtc_get_time() + 2 * SECONDS_PER_HOUR);
   activity_insights_process_minute_data(rtc_get_time());
   cl_assert_equal_i(s_data.notifs_shown, 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// Helpers for the sleep summary notification tests
+static void prv_use_utc_timezone(void) {
+  static TimezoneInfo tz = {
+    .tm_gmtoff = 0,
+  };
+  time_util_update_timezone(&tz);
+  prv_set_time(&s_init_time_tm);
+}
+
+// ---------------------------------------------------------------------------------------
+// Within one sleep window (9pm-to-9pm local) the summary notification fires at most once,
+// even when a later (false) sleep session extends the day's sleep bounds. The pin still
+// updates silently.
+void test_activity_insights__sleep_summary_no_renotify_same_window(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  // Init at Thursday 10:00am, then advance to 11:30pm - past the 9pm cutoff, so Thursday
+  // night's sleep window has started
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  // Sleep 10pm-11pm, awake at 11:30pm: pushes tonight's pin, no notification yet
+  prv_add_sleep_session(22, 1);
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 1);
+  Uuid orig_id = s_last_timeline_id;
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+
+  // Advance past midnight, sleep midnight-7am, awake at 7:05am Friday - same sleep window
+  rtc_set_time(rtc_get_time() + 30 * SECONDS_PER_MINUTE);
+  activity_insights_recalculate_stats();
+  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 7);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 2);
+  cl_assert(uuid_equal(&orig_id, &s_last_timeline_id));
+
+  // Be active for a couple of minutes, then pass the 30 minute post-wake mark: the summary
+  // notification fires exactly once
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+
+  // Same window, hours later: a false sleep session 4:30pm-5:30pm extends the bounds. The
+  // pin updates in place but no second notification may fire.
+  rtc_set_time(rtc_get_time() + 10 * SECONDS_PER_HOUR + 25 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(9.5, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 3);
+  cl_assert(uuid_equal(&orig_id, &s_last_timeline_id));
+
+  // Stay active past the 30 minute post-exit mark - still only one notification
+  prv_minute_update(2);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+}
+
+// ---------------------------------------------------------------------------------------
+// A new sleep window (past the 9pm cutoff) resets the notification guard: the next night's
+// sleep notifies again
+void test_activity_insights__sleep_summary_notify_next_window(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+
+  // Night 1: sleep 10pm-11pm Thursday and midnight-7am Friday, notification at 7:35am
+  prv_add_sleep_session(22, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 30 * SECONDS_PER_MINUTE);
+  activity_insights_recalculate_stats();
+  rtc_set_time(rtc_get_time() + 7 * SECONDS_PER_HOUR + 5 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 7);
+  activity_insights_process_sleep_data(rtc_get_time());
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
+  Uuid night1_id = s_last_timeline_id;
+
+  // Night 2: 11pm-11:30pm Friday is past the 9pm cutoff, starting a new sleep window with
+  // a new pin
+  rtc_set_time(rtc_get_time() + 16 * SECONDS_PER_HOUR + 15 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(16, 0.5);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert(!uuid_equal(&night1_id, &s_last_timeline_id));
+
+  // Sleep midnight-6:30am Saturday; the notification fires again for the new window
+  rtc_set_time(rtc_get_time() + 6 * SECONDS_PER_HOUR + 45 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(0.5, 6.5);
+  activity_insights_process_sleep_data(rtc_get_time());
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 2);
+}
+
+// ---------------------------------------------------------------------------------------
+// A sleep exit in the middle of the night is not a plausible wake-up, so it must not notify.
+// Skipping must not consume the window's notification: the real morning wake-up still does.
+void test_activity_insights__sleep_summary_notification_wake_window_gate(void) {
+  prv_use_utc_timezone();
+  prv_set_sleep_history_avg();
+
+  activity_insights_init(rtc_get_time());
+  rtc_set_time(rtc_get_time() + 13 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+
+  s_data.metric_history[ActivityMetricSleepState][0] = ActivitySleepStateAwake;
+  s_data.metric_history[ActivityMetricSleepStateSeconds][0] = 30 * SECONDS_PER_MINUTE;
+
+  // Sleep 10pm-11pm Thursday, awake at 11:30pm
+  prv_add_sleep_session(22, 1);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 1);
+
+  // Sleep midnight-2am, awake at 2:05am with some activity: exit is outside the wake
+  // window, so no notification
+  rtc_set_time(rtc_get_time() + 2 * SECONDS_PER_HOUR + 35 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 2);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 2);
+  s_data.steps_per_minute = 80;
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 0);
+
+  // Back to sleep 3am-7am; the real morning wake-up still notifies
+  rtc_set_time(rtc_get_time() + 4 * SECONDS_PER_HOUR + 30 * SECONDS_PER_MINUTE);
+  prv_add_sleep_session(1, 4);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(s_data.pins_added, 3);
+  prv_minute_update(2);
+  rtc_set_time(rtc_get_time() + 28 * SECONDS_PER_MINUTE);
+  activity_insights_process_sleep_data(rtc_get_time());
+  cl_assert_equal_i(fake_kernel_services_notifications_ancs_notifications_count(), 1);
 }

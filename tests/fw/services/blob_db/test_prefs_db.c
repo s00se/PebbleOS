@@ -3,7 +3,7 @@
 
 #include "clar.h"
 
-#include "util/uuid.h"
+#include "pbl/util/uuid.h"
 #include "pbl/services/filesystem/pfs.h"
 #include "pbl/services/blob_db/prefs_db.h"
 #include "shell/prefs.h"
@@ -29,7 +29,6 @@
 #include "stubs_mutex.h"
 #include "stubs_passert.h"
 #include "stubs_pbl_malloc.h"
-#include "stubs_powermode_service.h"
 #include "stubs_prompt.h"
 #include "stubs_rand_ptr.h"
 #include "stubs_sleep.h"

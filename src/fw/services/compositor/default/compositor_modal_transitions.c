@@ -7,7 +7,7 @@
 #include "pbl/services/compositor/compositor_private.h"
 
 #include "applib/graphics/framebuffer.h"
-#include "util/trig.h"
+#include "pbl/util/trig.h"
 #include "applib/ui/animation_interpolate.h"
 #include "applib/graphics/gdraw_command_sequence.h"
 #include "apps/system/timeline/common.h"
@@ -17,7 +17,7 @@
 
 
 // No animations will be shown on the following platforms
-#if defined(RECOVERY_FW)
+#if defined(CONFIG_RECOVERY_FW)
 #define MODAL_CONTRACT_TO_MODAL_ANIMATION (RESOURCE_ID_INVALID)
 #define MODAL_CONTRACT_FROM_MODAL_ANIMATION (RESOURCE_ID_INVALID)
 #define MODAL_EXPAND_TO_APP_ANIMATION (RESOURCE_ID_INVALID)

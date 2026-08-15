@@ -17,13 +17,13 @@
 #include "resource/resource_ids.auto.h"
 #include "shell/system_theme.h"
 #include "system/passert.h"
-#include "util/math.h"
+#include "pbl/util/math.h"
 
 #include <string.h>
 
 #define INDICATOR "»"
 
-#if !PBL_ROUND || (!defined(RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8)
+#if !PBL_ROUND || (!defined(CONFIG_RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8)
 static const int VERTICAL_PADDING = PBL_IF_COLOR_ELSE(2, 4);
 #endif
 #if CONFIG_SCREEN_COLOR_DEPTH_BITS == 1
@@ -403,7 +403,7 @@ static void prv_cell_item_draw(GContext *ctx, const Layer *cell_layer,
   // layer box.
   if (selected) {
     prv_animate_cell(aml, &label_text_frame, &draw_top_shading, &draw_bottom_shading);
-#if !defined(RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
+#if !defined(CONFIG_RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
     // Replace the clip box with a clip box that will render the item in the right place with the
     // right size, without menu layer's selection clipping. Menu layer will responsible for cleaning
     // up the changes made to this clip box.
@@ -429,7 +429,7 @@ static void prv_cell_item_draw(GContext *ctx, const Layer *cell_layer,
                    prv_cell_item_content_draw_round)(ctx, cell_layer, aml, item, selected,
                                                      &label_text_frame);
 
-#if !defined(RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
+#if !defined(CONFIG_RECOVERY_FW) && CONFIG_SCREEN_COLOR_DEPTH_BITS == 8
   const int16_t fade_height = 10;
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
   if (draw_top_shading) {
@@ -474,10 +474,18 @@ static int prv_get_menu_layer_row(ActionMenuLayer *aml, int item_index) {
   }
 }
 
+static void prv_selection_changed(ActionMenuLayer *aml) {
+  const ActionMenuItem *item = prv_get_item_for_index(aml, aml->selected_index);
+  if (item && aml->callbacks.selection_changed) {
+    aml->callbacks.selection_changed(item, aml->context);
+  }
+}
+
 T_STATIC void prv_set_selected_index(ActionMenuLayer *aml, int new_selected_index, bool animated) {
   new_selected_index = CLIP(new_selected_index, 0, aml->num_items + aml->num_short_items - 1);
+  const bool selection_changed = (new_selected_index != aml->selected_index);
 
-  if (new_selected_index != aml->selected_index) {
+  if (selection_changed) {
     // Unschedule any running item animation but don't NULL the pointer, to prevent another
     // animation from being accidentally re-scheduled.
     animation_unschedule(aml->item_animation.animation);
@@ -493,6 +501,9 @@ T_STATIC void prv_set_selected_index(ActionMenuLayer *aml, int new_selected_inde
   const int menu_layer_index = prv_get_menu_layer_row(aml, new_selected_index);
   menu_layer_set_selected_index(&aml->menu_layer, MenuIndex(0, menu_layer_index),
                                 MenuRowAlignCenter, animated);
+  if (selection_changed && new_selected_index >= aml->num_items) {
+    prv_selection_changed(aml);
+  }
 }
 
 static void prv_scroll_handler(ClickRecognizerRef recognizer, void *context) {
@@ -502,12 +513,22 @@ static void prv_scroll_handler(ClickRecognizerRef recognizer, void *context) {
   prv_set_selected_index(aml, new_idx, true /* animated */);
 }
 
-static void prv_select_handler(ClickRecognizerRef recognizer, void *context) {
-  ActionMenuLayer *aml = context;
+static void prv_activate_selection(ActionMenuLayer *aml) {
   const ActionMenuItem *item = prv_get_item_for_index(aml, aml->selected_index);
-  if (item && aml->cb) {
-    aml->cb(item, aml->context);
+  if (item && aml->callbacks.select) {
+    aml->callbacks.select(item, aml->context);
   }
+}
+
+static void prv_select_handler(ClickRecognizerRef recognizer, void *context) {
+  prv_activate_selection(context);
+}
+
+static void prv_select_click_cb(struct MenuLayer *menu_layer, MenuIndex *cell_index,
+                                void *callback_context) {
+  // Touch tap activation. The AML's own selected_index identifies the item (a short-item menu row
+  // holds several columns), matching the SELECT button path.
+  prv_activate_selection(callback_context);
 }
 
 static bool prv_aml_is_short(ActionMenuLayer *aml) {
@@ -646,6 +667,13 @@ static void prv_selection_changed_cb(struct MenuLayer *menu_layer, MenuIndex new
     // Enable a new item animation to be scheduled
     prv_unschedule_item_animation(aml);
     aml->selected_index = new_index.row;
+    prv_selection_changed(aml);
+  } else if (prv_get_menu_layer_row(aml, aml->selected_index) != new_index.row) {
+    // A touch tap moves the menu selection directly, bypassing prv_set_selected_index, so no
+    // column index was pre-set for this short-item row; adopt its first column.
+    prv_unschedule_item_animation(aml);
+    aml->selected_index = aml->num_items + (new_index.row - aml->num_items) * SHORT_COL_COUNT;
+    prv_selection_changed(aml);
   }
 }
 
@@ -739,8 +767,21 @@ void action_menu_layer_click_config_provider(ActionMenuLayer *aml) {
 void action_menu_layer_set_callback(ActionMenuLayer *aml,
                                     ActionMenuLayerCallback cb,
                                     void *context) {
-  aml->cb = cb;
+  aml->callbacks = (ActionMenuLayerCallbacks) {
+    .select = cb,
+  };
   aml->context = context;
+}
+
+void action_menu_layer_set_callbacks(ActionMenuLayer *aml,
+                                     ActionMenuLayerCallbacks callbacks,
+                                     void *context) {
+  aml->callbacks = callbacks;
+  aml->context = context;
+}
+
+void action_menu_layer_notify_selection_changed(ActionMenuLayer *aml) {
+  prv_selection_changed(aml);
 }
 
 void action_menu_layer_init(ActionMenuLayer *aml, const GRect *frame) {
@@ -752,6 +793,7 @@ void action_menu_layer_init(ActionMenuLayer *aml, const GRect *frame) {
   aml->layout_cache = (ActionMenuLayoutCache){
     .font = prv_get_item_font()
   };
+  aml->callbacks = (ActionMenuLayerCallbacks){};
   aml->layer.property_changed_proc = prv_changed_proc;
   aml->layer.update_proc = prv_update_proc;
 
@@ -769,10 +811,11 @@ void action_menu_layer_init(ActionMenuLayer *aml, const GRect *frame) {
       .draw_separator = prv_draw_separator_cb,
       .get_header_height = prv_get_header_height_cb,
       .draw_header = prv_draw_header_cb,
-      .selection_changed = prv_selection_changed_cb
+      .selection_changed = prv_selection_changed_cb,
+      .select_click = prv_select_click_cb,
   });
 
-#if !defined(RECOVERY_FW)
+#if !defined(CONFIG_RECOVERY_FW)
   gbitmap_init_with_resource_system(&aml->item_animation.fade_top, SYSTEM_APP,
                                     RESOURCE_ID_ACTION_MENU_FADE_TOP);
   gbitmap_init_with_resource_system(&aml->item_animation.fade_bottom, SYSTEM_APP,
@@ -791,7 +834,7 @@ void action_menu_layer_deinit(ActionMenuLayer *aml) {
 
   prv_unschedule_item_animation(aml);
 
-#ifndef RECOVERY_FW
+#ifndef CONFIG_RECOVERY_FW
   gbitmap_deinit(&aml->item_animation.fade_top);
   gbitmap_deinit(&aml->item_animation.fade_bottom);
 #endif

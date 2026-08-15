@@ -14,11 +14,13 @@
 #include "pbl/services/app_cache.h"
 #include "pbl/services/blob_db/app_db.h"
 #include "pbl/services/process_management/app_storage.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
-#include "util/attributes.h"
-#include "util/math.h"
-#include "util/uuid.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
+#include "pbl/util/uuid.h"
+
+PBL_LOG_MODULE_DEFINE(service_app_fetch_endpoint, CONFIG_SERVICE_APP_FETCH_ENDPOINT_LOG_LEVEL);
 
 //! Used for keeping track of binaries that are loaded through put_bytes
 typedef struct {

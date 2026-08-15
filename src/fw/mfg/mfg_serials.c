@@ -6,7 +6,7 @@
 #include "mfg_serials.h"
 
 #include "console/prompt.h"
-#include "util/size.h"
+#include "pbl/util/size.h"
 
 static const uint8_t OTP_SERIAL_SLOT_INDICES[] = {
   OTP_SERIAL,
@@ -193,8 +193,8 @@ static void mfg_print_feedback(const MfgSerialsResult result, const uint8_t inde
 #if defined(CONFIG_IS_BIGBOARD)
 
 #include <stdio.h>
-#include "drivers/rtc.h"
-#include "system/logging.h"
+#include <pbl/drivers/rtc.h>
+#include <pbl/logging/logging.h>
 
 #ifndef CONFIG_SOC_NRF52
 static void prv_get_not_so_unique_serial(char *serial_number) {

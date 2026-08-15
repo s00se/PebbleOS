@@ -8,8 +8,8 @@
 #include "pbl/services/filesystem/pfs.h"
 #include "system/passert.h"
 #include "system/status_codes.h"
-#include "util/attributes.h"
-#include "util/math.h"
+#include "pbl/util/attributes.h"
+#include "pbl/util/math.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -26,7 +26,7 @@ typedef struct PACKED PFSOpenOptions {
   char filename[0];
 } PFSOpenOptions;
 
-#if !RECOVERY_FW
+#if !defined(CONFIG_RECOVERY_FW)
 static int prv_open_file(void *packet_data, size_t length) {
   PFSOpenOptions *options = packet_data;
 
