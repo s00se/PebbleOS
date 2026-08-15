@@ -15,6 +15,7 @@
 #include "applib/ui/dialogs/simple_dialog.h"
 #include "applib/ui/ui.h"
 #include "applib/ui/window.h"
+#include "applib/ui/window_private.h"
 #include "applib/ui/window_manager.h"
 #include "applib/ui/window_stack.h"
 #include "apps/system/timeline/peek_layer.h"
@@ -415,6 +416,10 @@ static void prv_show_peek_for_notification(NotificationWindowData *data, Uuid *i
   // get the current layout so we can get the color and icon
   LayoutLayer *layout = swap_layer_get_current_layout(&data->swap_layer);
   if (!layout) {
+    // The backing record couldn't be read, so there is nothing to peek at. The
+    // caller declines to push the window in this case; don't strand the layer.
+    peek_layer_destroy(data->peek_layer);
+    data->peek_layer = NULL;
     return;
   }
 
@@ -1085,6 +1090,13 @@ static void prv_window_appear(Window *window) {
     prv_pop_notification_window_after_delay(data, 0);
     return;
   }
+  if (!swap_layer_get_current_layout(&data->swap_layer)) {
+    // The entry is still listed but its record is gone, so there is nothing to
+    // draw. Self-pop rather than sit on an empty window.
+    PBL_LOG_WRN("Notification window has no layout; popping");
+    prv_pop_notification_window_after_delay(data, 0);
+    return;
+  }
   prv_setup_reminder_watchdog(data);
 
   prv_refresh_pop_timer(data);
@@ -1101,6 +1113,12 @@ static void prv_window_appear(Window *window) {
 static void prv_window_disappear(Window *window) {
   NotificationWindowData *data = window_get_user_data(window);
   prv_cleanup_timer(&data->pop_timer_id);
+#ifdef CONFIG_TOUCH
+  // A higher modal (e.g. the action menu opened via SELECT) has covered this window. Release the
+  // swap layer's touch participation so the now-focused modal owns touch and events cannot leak into
+  // this hidden notification body. The click-config-provider re-registers it on re-show.
+  swap_layer_touch_release(&data->swap_layer);
+#endif
 }
 
 static void prv_handle_presented_notif_deinit(Uuid *id, NotificationType type, void *not_used) {
@@ -1235,6 +1253,15 @@ static StatusBarLayerMode prv_status_bar_mode_for_style(NotificationStatusBarSty
   }
 }
 
+#ifdef CONFIG_TOUCH
+// The action button layer spans the full window for drawing purposes only; it is decorative and
+// owns no touch region. Report that it contains no point so touch hit-testing falls through to the
+// notification swap layer underneath, allowing content-scroll gestures to reach it.
+static bool prv_action_button_touch_transparent(const Layer *layer, const GPoint *point) {
+  return false;
+}
+#endif
+
 static void prv_init_notification_window(bool is_modal) {
   NotificationWindowData *data = &s_notification_window_data;
 
@@ -1270,6 +1297,13 @@ static void prv_init_notification_window(bool is_modal) {
       .unload = prv_window_unload,
   });
   window_set_user_data(window, data);
+
+#ifdef CONFIG_TOUCH
+  // The notification body scrolls via the Tier-1 swap layer, so opt this window out of the Tier-2
+  // button bridge; that leaves the swap layer as the sole touch handler and stops a stray tap
+  // elsewhere from emulating a button.
+  window_set_touch_bridge_disabled(window, true);
+#endif
 
   // Initialize some variables early
   Layer *root_layer = window_get_root_layer(window);
@@ -1314,6 +1348,9 @@ static void prv_init_notification_window(bool is_modal) {
   layer_init(&data->action_button_layer, &data->window.layer.bounds);
   data->action_button_layer.update_proc = action_button_update_proc;
   layer_add_child(root_layer, &data->action_button_layer);
+#ifdef CONFIG_TOUCH
+  layer_set_contains_point_override(&data->action_button_layer, prv_action_button_touch_transparent);
+#endif
 
   layer_set_hidden((Layer *)&data->action_button_layer, true);
 
@@ -1513,7 +1550,13 @@ static void prv_handle_notification_added_common(Uuid *id, NotificationType type
   if (is_new) {
     data->first_notif_loaded = false;
     prv_show_peek_for_notification(data, id, true /* is_first_notification */);
-    modal_window_push(&data->window, NOTIFICATION_PRIORITY, true /* animated */);
+    if (swap_layer_get_current_layout(&data->swap_layer)) {
+      modal_window_push(&data->window, NOTIFICATION_PRIORITY, true /* animated */);
+    } else {
+      // No layout means the backing record couldn't be read. Pushing anyway puts
+      // an empty window on screen (white, no vibe) that only Back can dismiss.
+      PBL_LOG_WRN("No layout for notification; not showing the window");
+    }
   } else if (in_view) {
     // Only focus the new notification if it becomes the new front of the list.
     // In DND mode notifications can get inserted into the middle of the list and we don't
