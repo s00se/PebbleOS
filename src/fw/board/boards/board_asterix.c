@@ -4,20 +4,20 @@
 #include <nrfx_i2s.h>
 
 #include "board/board.h"
-#include "drivers/audio.h"
-#include "drivers/flash/qspi_flash_definitions.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
-#include "drivers/i2c/definitions.h"
-#include "drivers/mic.h"
-#include "drivers/mic/nrf5/pdm_definitions.h"
-#include "drivers/speaker/nrf5/da7212_definitions.h"
-#include "drivers/i2c/nrf5.h"
-#include "drivers/uart/nrf5.h"
-#include "drivers/pmic/npm1300.h"
-#include "drivers/pwm.h"
-#include "drivers/qspi_definitions.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/flash/qspi_flash_definitions.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
+#include <pbl/drivers/i2c/definitions.h>
+#include <pbl/drivers/mic.h>
+#include <pbl/drivers/mic/nrf5/pdm_definitions.h>
+#include <pbl/drivers/speaker/nrf5/da7212_definitions.h>
+#include <pbl/drivers/i2c/nrf5.h>
+#include <pbl/drivers/uart/nrf5.h>
+#include <pbl/drivers/pmic/npm1300.h>
+#include <pbl/drivers/pwm.h>
+#include <pbl/drivers/qspi_definitions.h>
+#include <pbl/drivers/rtc.h>
 #include "flash_region/flash_region.h"
 #include "kernel/util/sleep.h"
 #include "system/passert.h"
@@ -189,6 +189,10 @@ static const LSM6DSOConfig s_lsm6dso_config = {
     .int1 = {
         .peripheral = NRFX_GPIOTE_INSTANCE(0),
         .channel = 7,
+        .gpio_pin = NRF_GPIO_PIN_MAP(1, 13),
+    },
+    .int1_in = {
+        .gpio = NRF5_GPIO_RESOURCE_EXISTS,
         .gpio_pin = NRF_GPIO_PIN_MAP(1, 13),
     },
     .axis_map = {

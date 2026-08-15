@@ -6,21 +6,21 @@
 
 #include <math.h>
 
-#include "drivers/pmic.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/pmic.h>
+#include <pbl/drivers/battery.h>
 
 #include "board/board.h"
 #include "console/prompt.h"
-#include "drivers/battery.h"
-#include "drivers/exti.h"
-#include "drivers/gpio.h"
-#include "drivers/i2c.h"
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/exti.h>
+#include <pbl/drivers/gpio.h>
+#include <pbl/drivers/i2c.h>
 #include "kernel/events.h"
 #include "kernel/util/delay.h"
 #include "kernel/util/sleep.h"
 #include "pbl/os/mutex.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 PBL_LOG_MODULE_DEFINE(driver_pmic_npm1300, CONFIG_DRIVER_PMIC_LOG_LEVEL);
@@ -587,8 +587,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (msb << NPM1300_ADC_MSB_SHIFT) |
-        ((lsb & PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_POS);
+        ((lsb >> PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP0RESULTLSBS_VBATRESULTLSB_MSK);
 
   constants->v_mv = (int32_t)(raw * NPM1300_ADC_VFS_VBAT_MV) / NPM1300_BCHARGER_ADC_BITS_RESOLUTION;
 
@@ -616,8 +616,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (msb << NPM1300_ADC_MSB_SHIFT) |
-        ((lsb & PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_POS);
+        ((lsb >> PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP1RESULTLSBS_VBAT2RESULTLSB_MSK);
 
   constants->i_ua = ((int32_t)raw * full_scale_ua) / NPM1300_BCHARGER_ADC_BITS_RESOLUTION;
 
@@ -645,8 +645,8 @@ int battery_get_constants(BatteryConstants *constants) {
   }
 
   raw = (lsb << NPM1300_ADC_MSB_SHIFT) |
-        ((msb & PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_MSK) >>
-         PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_POS);
+        ((msb >> PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_POS) &
+         PmicRegisters_ADC_ADCGP0RESULTLSBS_NTCRESULTLSB_MSK);
 
   // Ref: PS v1.2 Section 7.1.4: Battery temperature (Kelvin)
   float log_result = logf((1024.f / (float)raw) - 1.0f);

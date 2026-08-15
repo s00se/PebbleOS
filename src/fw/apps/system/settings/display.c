@@ -8,8 +8,8 @@
 
 #include "applib/fonts/fonts.h"
 #include "applib/ui/ui.h"
-#include "drivers/ambient_light.h"
-#include "drivers/battery.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/battery.h>
 #include "kernel/pbl_malloc.h"
 #include "kernel/util/sleep.h"
 #include "popups/notifications/notification_window.h"
@@ -17,7 +17,7 @@
 #include "pbl/services/i18n/i18n.h"
 #include "pbl/services/light.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/size.h"
 
@@ -246,6 +246,7 @@ static void prv_dynamic_mode_menu_push(SettingsBacklightData *data) {
       title, OptionMenuContentType_SingleLine, index, &callbacks,
       ARRAY_LENGTH(s_dynamic_mode_labels), true /* icons_enabled */, s_dynamic_mode_labels, data);
 }
+#endif
 
 // Backlight Preset Settings
 /////////////////////////////
@@ -279,7 +280,6 @@ static void prv_preset_menu_push(SettingsDisplayData *data) {
       ARRAY_LENGTH(s_backlight_preset_labels), true /* icons_enabled */,
       s_backlight_preset_labels, data);
 }
-#endif
 
 // Legacy App Mode Settings (Obelix only)
 /////////////////////////////
@@ -536,11 +536,7 @@ static void prv_backlight_submenu_push(void) {
     .hide = prv_backlight_hide_cb,
   };
 
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
   const char *title = i18n_noop("Backlight Settings");
-#else
-  const char *title = i18n_noop("Backlight");
-#endif
   Window *window = settings_window_create_with_title(SettingsMenuItemDisplay,
                                                      title, &data->callbacks);
   app_window_stack_push(window, true /* animated */);
@@ -551,11 +547,10 @@ static void prv_backlight_submenu_push(void) {
 
 enum SettingsDisplayItem {
   SettingsDisplayBacklight,
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
   SettingsDisplayBacklightSettings,
-#endif
 #ifdef CONFIG_TOUCH
-  SettingsDisplayTouch,
+  SettingsDisplayTouchNav,
+  SettingsDisplayTouchNavMenus,
 #endif
 #ifdef CONFIG_ORIENTATION_MANAGER
   SettingsDisplayOrientation,
@@ -568,11 +563,16 @@ enum SettingsDisplayItem {
 };
 
 static bool prv_display_item_is_visible(uint16_t item) {
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
   // The full backlight submenu only shows for the Advanced backlight mode;
   // the presets cover everything it contains.
   if (item == SettingsDisplayBacklightSettings) {
     return backlight_get_preset() == BacklightPreset_Advanced;
+  }
+#ifdef CONFIG_TOUCH
+  // The Touch Navigation row (native menu gestures) only has an effect while the master Touch
+  // switch is on.
+  if (item == SettingsDisplayTouchNavMenus) {
+    return touch_is_globally_enabled();
   }
 #endif
   return true;
@@ -595,20 +595,19 @@ static uint16_t prv_display_item_from_row(uint16_t row) {
 static void prv_display_select_click_cb(SettingsCallbacks *context, uint16_t row) {
   switch (prv_display_item_from_row(row)) {
     case SettingsDisplayBacklight:
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
       prv_preset_menu_push((SettingsDisplayData *)context);
-#else
-      prv_backlight_submenu_push();
-#endif
       break;
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
     case SettingsDisplayBacklightSettings:
       prv_backlight_submenu_push();
       break;
-#endif
 #ifdef CONFIG_TOUCH
-    case SettingsDisplayTouch:
+    case SettingsDisplayTouchNav:
+      // The master "Touch" row IS the global touch kill switch:
+      // off = sensor down, events dropped, nothing touch-driven anywhere.
       touch_set_globally_enabled(!touch_is_globally_enabled());
+      break;
+    case SettingsDisplayTouchNavMenus:
+      touch_set_navigation_menu_enabled(!touch_navigation_menu_is_enabled());
       break;
 #endif
 #ifdef CONFIG_ORIENTATION_MANAGER
@@ -639,20 +638,20 @@ static void prv_display_draw_row_cb(SettingsCallbacks *context, GContext *ctx,
   switch (prv_display_item_from_row(row)) {
     case SettingsDisplayBacklight:
       title = i18n_noop("Backlight");
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
       subtitle = backlight_is_enabled() ? s_backlight_preset_labels[backlight_get_preset()]
                                         : i18n_ctx_noop("DeviceState", "Off");
-#endif
       break;
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
     case SettingsDisplayBacklightSettings:
       title = i18n_noop("Backlight Settings");
       break;
-#endif
 #ifdef CONFIG_TOUCH
-    case SettingsDisplayTouch:
+    case SettingsDisplayTouchNav:
       title = i18n_noop("Touch");
       subtitle = touch_is_globally_enabled() ? i18n_noop("On") : i18n_noop("Off");
+      break;
+    case SettingsDisplayTouchNavMenus:
+      title = i18n_noop("Touch Navigation");
+      subtitle = touch_navigation_menu_is_enabled() ? i18n_noop("On") : i18n_noop("Off");
       break;
 #endif
 #ifdef CONFIG_ORIENTATION_MANAGER

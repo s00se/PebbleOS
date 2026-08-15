@@ -3,8 +3,8 @@
 
 #include "board/board.h"
 #include "board/splash.h"
-#include "drivers/sf32lb52/debounced_button_definitions.h"
-#include "drivers/watchdog.h"
+#include <pbl/drivers/sf32lb52/debounced_button_definitions.h>
+#include <pbl/drivers/watchdog.h>
 #include "system/passert.h"
 
 #include "bf0_hal.h"
@@ -289,6 +289,10 @@ static const LIS2DW12Config s_lis2dw12_config = {
     },
     .int1 = {
       .peripheral = hwp_gpio1,
+      .gpio_pin = 26,
+    },
+    .int1_in = {
+      .gpio = hwp_gpio1,
       .gpio_pin = 26,
     },
     .axis_map = {

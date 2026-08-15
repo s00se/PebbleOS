@@ -9,8 +9,8 @@
 #include "pcm_stream.h"
 #include "track_player.h"
 
-#include "drivers/audio.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/audio.h>
+#include <pbl/drivers/rtc.h>
 #include "board/board.h"
 #include "kernel/events.h"
 #include "kernel/pbl_malloc.h"
@@ -19,7 +19,7 @@
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/notifications/do_not_disturb.h"
 #include "pbl/services/system_task.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <string.h>
@@ -29,12 +29,22 @@ PBL_LOG_MODULE_DEFINE(service_speaker, CONFIG_SERVICE_SPEAKER_LOG_LEVEL);
 #define SPEAKER_SAMPLE_RATE 16000
 #define SPEAKER_REFILL_SAMPLES 512
 
+// Volume-preview tone: square, to match the perceived loudness
+#define VOLUME_PREVIEW_FREQ_HZ 660
+#define VOLUME_PREVIEW_DURATION_MS 200
+
+// The audio drivers queue up to ~64 ms ahead of the DAC (double-buffered
+// DMA/I2S pipe + circular buffer). Once the source runs dry, pad with 80 ms
+// of silence before stopping so the queued audio actually plays.
+#define SPEAKER_PIPELINE_DRAIN_SAMPLES ((SPEAKER_SAMPLE_RATE * 80) / 1000)
+
 typedef struct {
   SpeakerState state;
   SpeakerSourceType source_type;
   SpeakerPriority priority;
   PebbleTask owner_task;
   uint8_t volume;
+  bool volume_absolute;
 
   // Note sequence source
   NoteSequenceState note_seq;
@@ -70,6 +80,12 @@ typedef struct {
   int32_t mix_buf[SPEAKER_REFILL_SAMPLES];
   int16_t track_scratch[SPEAKER_REFILL_SAMPLES];
 
+  // Pipeline drain: set once the source has no more samples to generate;
+  // we then emit drain_samples_remaining of silence before stopping so the
+  // driver's queued audio finishes playing.
+  bool pipeline_draining;
+  uint32_t drain_samples_remaining;
+
   // Finish-event delivery
   bool finish_enabled;
   PebbleTask finish_task;
@@ -81,6 +97,13 @@ static SpeakerServiceState s_state;
 
 // Serializes public APIs against prv_refill_bg (system task).
 static PebbleMutex *s_lock;
+
+//! Why playback is currently silent, cached so a muted watch logs once per change
+//! rather than on every sound.
+#define SPEAKER_SILENT (1 << 0)
+#define SPEAKER_SILENT_BY_MUTE (1 << 1)
+#define SPEAKER_SILENT_BY_DND (1 << 2)
+static uint8_t s_silence_reasons;
 
 //! Analytics: time-weighted average volume, reset on heartbeat.
 static uint64_t s_volume_time_product_sum;     // Sum of (volume_pct × time_ms)
@@ -105,6 +128,9 @@ static bool prv_is_speaker_muted(void) {
 static uint8_t prv_effective_volume(uint8_t vol) {
   if (prv_is_speaker_muted()) {
     return 0;
+  }
+  if (s_state.volume_absolute) {
+    return vol;
   }
   const uint8_t cap = alerts_preferences_get_speaker_volume();
   return (uint32_t)vol * cap / 100;
@@ -136,14 +162,45 @@ void speaker_service_init(void) {
   s_state.owner_task = PebbleTask_Unknown;
   s_state.initialized = true;
 
+  s_silence_reasons = 0;
   s_volume_time_product_sum = 0;
   s_last_volume_sample_ticks = 0;
   s_last_sampled_volume_pct = 0;
   s_total_speaker_on_time_ms = 0;
 }
 
+//! Silent playback looks identical to broken hardware from the outside, so record
+//! which setting silenced it. Logs only when the reason changes: this runs on every
+//! sound, and a muted watch would otherwise flood the log.
+static void prv_log_silence(uint8_t vol, uint8_t effective_vol) {
+  uint8_t reasons = 0;
+
+  if (effective_vol == 0) {
+    reasons = SPEAKER_SILENT;
+    if (alerts_preferences_get_speaker_muted()) {
+      reasons |= SPEAKER_SILENT_BY_MUTE;
+    }
+    if (alerts_preferences_dnd_get_mute_speaker() && do_not_disturb_is_active()) {
+      reasons |= SPEAKER_SILENT_BY_DND;
+    }
+  }
+
+  if (reasons == s_silence_reasons) {
+    return;
+  }
+  s_silence_reasons = reasons;
+
+  if (reasons != 0) {
+    PBL_LOG_INFO("Playing silently: vol=%"PRIu8" cap=%"PRIu8" mute=%d quiet_time_mute=%d", vol,
+                 alerts_preferences_get_speaker_volume(),
+                 (reasons & SPEAKER_SILENT_BY_MUTE) != 0, (reasons & SPEAKER_SILENT_BY_DND) != 0);
+  }
+}
+
 static void prv_start_audio(uint8_t vol) {
   const uint8_t effective_vol = prv_effective_volume(vol);
+
+  prv_log_silence(vol, effective_vol);
 
   PBL_ANALYTICS_TIMER_START(speaker_on_time_ms);
   PBL_ANALYTICS_ADD(speaker_play_count, 1);
@@ -199,6 +256,8 @@ static void prv_stop_internal(SpeakerFinishReason reason) {
   s_state.state = SpeakerStateIdle;
   s_state.source_type = SpeakerSourceNone;
   s_state.owner_task = PebbleTask_Unknown;
+  s_state.pipeline_draining = false;
+  s_state.volume_absolute = false;
 
   if (reason == SpeakerFinishReasonPreempted) {
     PBL_ANALYTICS_ADD(speaker_preempted_count, 1);
@@ -228,6 +287,11 @@ static void prv_stop_internal(SpeakerFinishReason reason) {
 
 static bool prv_can_preempt(SpeakerPriority new_pri) {
   if (s_state.state == SpeakerStateIdle) {
+    return true;
+  }
+  if (s_state.pipeline_draining) {
+    // Only padding silence remains — let anyone start a new sound rather
+    // than rejecting it (matters for rapid re-triggers, e.g. a metronome).
     return true;
   }
   return new_pri > s_state.priority;
@@ -351,23 +415,19 @@ static void prv_refill_locked(void) {
   }
 
   uint32_t samples_generated = 0;
+  bool source_exhausted = false;
 
   if (s_state.source_type == SpeakerSourceNoteSeq) {
     samples_generated = note_seq_fill(&s_state.note_seq, s_state.refill_buf,
                                       SPEAKER_REFILL_SAMPLES);
-    if (samples_generated == 0) {
-      prv_stop_internal(SpeakerFinishReasonDone);
-      return;
-    }
+    source_exhausted = (samples_generated == 0);
   } else if (s_state.source_type == SpeakerSourceStream) {
     samples_generated = prv_read_and_convert_pcm(s_state.refill_buf,
                                                   SPEAKER_REFILL_SAMPLES);
     if (samples_generated == 0 && pcm_stream_is_done(&s_state.pcm_stream)) {
-      prv_stop_internal(SpeakerFinishReasonDone);
-      return;
-    }
-    // If no data but not done, write silence to keep DMA fed
-    if (samples_generated == 0) {
+      source_exhausted = true;
+    } else if (samples_generated == 0) {
+      // No data but not done — write silence to keep DMA fed
       PBL_ANALYTICS_ADD(speaker_stream_underrun_count, 1);
       memset(s_state.refill_buf, 0, SPEAKER_REFILL_SAMPLES * sizeof(int16_t));
       samples_generated = SPEAKER_REFILL_SAMPLES;
@@ -378,10 +438,8 @@ static void prv_refill_locked(void) {
       to_gen = SPEAKER_REFILL_SAMPLES;
     }
     if (to_gen == 0) {
-      prv_stop_internal(SpeakerFinishReasonDone);
-      return;
-    }
-    if (s_state.tone_phase_inc == 0) {
+      source_exhausted = true;
+    } else if (s_state.tone_phase_inc == 0) {
       memset(s_state.refill_buf, 0, to_gen * sizeof(int16_t));
     } else {
       for (uint32_t i = 0; i < to_gen; i++) {
@@ -408,8 +466,7 @@ static void prv_refill_locked(void) {
       }
     }
     if (max_generated == 0) {
-      prv_stop_internal(SpeakerFinishReasonDone);
-      return;
+      source_exhausted = true;
     }
     for (uint32_t j = 0; j < max_generated; j++) {
       int32_t v = s_state.mix_buf[j];
@@ -418,6 +475,26 @@ static void prv_refill_locked(void) {
       s_state.refill_buf[j] = (int16_t)v;
     }
     samples_generated = max_generated;
+  }
+
+  if (source_exhausted) {
+    // Drain: pad with silence so the driver's queued audio finishes playing.
+    if (!s_state.pipeline_draining) {
+      s_state.pipeline_draining = true;
+      s_state.drain_samples_remaining = SPEAKER_PIPELINE_DRAIN_SAMPLES;
+      s_state.state = SpeakerStateDraining;
+    }
+    uint32_t to_gen = s_state.drain_samples_remaining;
+    if (to_gen == 0) {
+      prv_stop_internal(SpeakerFinishReasonDone);
+      return;
+    }
+    if (to_gen > SPEAKER_REFILL_SAMPLES) {
+      to_gen = SPEAKER_REFILL_SAMPLES;
+    }
+    memset(s_state.refill_buf, 0, to_gen * sizeof(int16_t));
+    s_state.drain_samples_remaining -= to_gen;
+    samples_generated = to_gen;
   }
 
   if (samples_generated > 0) {
@@ -477,9 +554,10 @@ bool speaker_service_play_note_seq(const SpeakerNote *notes, uint32_t num_notes,
   return true;
 }
 
-bool speaker_service_play_tone(uint16_t freq_hz, uint16_t duration_ms,
-                               uint8_t waveform, uint8_t velocity,
-                               SpeakerPriority pri, uint8_t vol) {
+static bool prv_play_tone_internal(uint16_t freq_hz, uint16_t duration_ms,
+                                   uint8_t waveform, uint8_t velocity,
+                                   SpeakerPriority pri, uint8_t vol,
+                                   bool volume_absolute) {
   mutex_lock(s_lock);
 
   if (!s_state.initialized || duration_ms == 0) {
@@ -509,12 +587,29 @@ bool speaker_service_play_tone(uint16_t freq_hz, uint16_t duration_ms,
   s_state.source_type = SpeakerSourceTone;
   s_state.priority = pri;
   s_state.volume = vol;
+  s_state.volume_absolute = volume_absolute;
 
   prv_start_audio(vol);
   prv_refill_locked();
 
   mutex_unlock(s_lock);
   return true;
+}
+
+bool speaker_service_play_tone(uint16_t freq_hz, uint16_t duration_ms,
+                               uint8_t waveform, uint8_t velocity,
+                               SpeakerPriority pri, uint8_t vol) {
+  return prv_play_tone_internal(freq_hz, duration_ms, waveform, velocity, pri, vol,
+                                false /* volume_absolute */);
+}
+
+bool speaker_service_play_volume_preview(uint8_t vol) {
+  if (vol > 100) {
+    vol = 100;
+  }
+  return prv_play_tone_internal(VOLUME_PREVIEW_FREQ_HZ, VOLUME_PREVIEW_DURATION_MS,
+                                SpeakerWaveformSquare, 0 /* velocity: full */,
+                                SpeakerPriorityApp, vol, true /* volume_absolute */);
 }
 
 bool speaker_service_play_tracks(const SpeakerTrack *tracks, uint32_t num_tracks,
@@ -784,6 +879,10 @@ bool speaker_service_play_note_seq(const SpeakerNote *notes, uint32_t num_notes,
 bool speaker_service_play_tone(uint16_t freq_hz, uint16_t duration_ms,
                                uint8_t waveform, uint8_t velocity,
                                SpeakerPriority pri, uint8_t vol) {
+  return false;
+}
+
+bool speaker_service_play_volume_preview(uint8_t vol) {
   return false;
 }
 

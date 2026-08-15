@@ -2,9 +2,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "board/board.h"
-#include "drivers/flash/flash_impl.h"
-#include "drivers/flash/qspi_flash.h"
-#include "drivers/flash/qspi_flash_part_definitions.h"
+#include <pbl/drivers/flash/flash_impl.h>
+#include <pbl/drivers/flash/qspi_flash.h>
+#include <pbl/drivers/flash/qspi_flash_part_definitions.h>
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/mcu/cache.h"
@@ -317,7 +317,7 @@ status_t qspi_flash_security_register_is_locked(QSPIFlash *dev, uint32_t addr, b
 
   /* OPT operation are synchronous, one match means all matched. */
   portENTER_CRITICAL();
-  opt_val = HAL_QSPI_GET_OTP_LB(hflash, addr);
+  opt_val = HAL_QSPI_GET_OTP_LB(hflash);
   portEXIT_CRITICAL();
 
   if (opt_val == 0xff) {
@@ -362,6 +362,11 @@ status_t qspi_flash_write_security_register(QSPIFlash *dev, uint32_t addr, uint8
   if (res != S_SUCCESS) {
     return res;
   }
+
+  uintptr_t flush_addr = (uintptr_t)&val;
+  size_t flush_size = sizeof(val);
+  dcache_align(&flush_addr, &flush_size);
+  dcache_flush((const void *)flush_addr, flush_size);
 
   portENTER_CRITICAL();
   res = HAL_QSPI_WRITE_OTP(hflash, addr, &val, 1);

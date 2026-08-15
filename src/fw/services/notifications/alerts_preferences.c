@@ -4,7 +4,7 @@
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "popups/notifications/notification_window.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/notifications/do_not_disturb.h"
@@ -359,6 +359,11 @@ void alerts_preferences_init(void) {
   prv_migrate_legacy_first_use_settings(&file);
   prv_migrate_vibe_intensity_to_vibe_scores(&file);
   prv_ensure_valid_vibe_scores();
+  // RESTORE_PREF writes straight into the globals, bypassing the setter that
+  // clamps this, so an out-of-range stored value has to be caught here.
+  if (s_speaker_volume > 100) {
+    s_speaker_volume = 100;
+  }
   prv_save_changed_vibe_scores_to_file(&file, orig_vibe_score_notifications,
                                        orig_vibe_score_incoming_calls,
                                        orig_vibe_score_alarms,
@@ -650,6 +655,21 @@ void alerts_preferences_unlock(void) {
   mutex_unlock(s_mutex);
 }
 
+//! Keys that feed do_not_disturb_is_active() or the DND schedule timer
+static bool prv_is_dnd_state_key(const char *key) {
+  if (strcmp(key, PREF_KEY_DND_MANUALLY_ENABLED) == 0 ||
+      strcmp(key, PREF_KEY_DND_SMART_ENABLED) == 0) {
+    return true;
+  }
+  for (int i = 0; i < NumDNDSchedules; i++) {
+    if (strcmp(key, s_dnd_schedule_keys[i].schedule_pref_key) == 0 ||
+        strcmp(key, s_dnd_schedule_keys[i].enabled_pref_key) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void alerts_preferences_handle_blob_db_event(PebbleBlobDBEvent *event) {
   if (event->type != BlobDBEventTypeInsert) {
     return;
@@ -720,8 +740,12 @@ done:
   settings_file_close(&file);
   mutex_unlock(s_mutex);
 
-  // Notify UI that a preference changed so it can refresh
   if (matched_key) {
+    // DND state keys are reloaded behind the DND service's back; kick it so the
+    // change re-arms the schedule timer and fires PEBBLE_DO_NOT_DISTURB_EVENT.
+    if (prv_is_dnd_state_key(matched_key)) {
+      do_not_disturb_handle_pref_synced();
+    }
     PebbleEvent pref_event = {
       .type = PEBBLE_PREF_CHANGE_EVENT,
       .pref_change = {

@@ -12,19 +12,24 @@
  * driver, etc.
  */
 
+#include <stdlib.h>
 #include <string.h>
+
+// itoa is a Pebble/newlib extension; newlib hides it under strict-ANSI
+// (-std=c11), so declare it explicitly for non-Pebble libcs.
+extern char *itoa(int value, char *str, int base);
 
 #include "kernel/core_dump.h"
 #include "kernel/core_dump_private.h"
 
 #include "console/dbgserial.h"
-#include "kernel/logging_private.h"
-#include "kernel/pulse_logging.h"
+#include "logging/logging_private.h"
+#include "logging/pulse_logging.h"
 
-#include "drivers/flash.h"
-#include "drivers/mpu.h"
-#include "drivers/watchdog.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/mpu.h>
+#include <pbl/drivers/watchdog.h>
+#include <pbl/drivers/rtc.h>
 
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
@@ -36,7 +41,7 @@
 #include "system/bootbits.h"
 #include "system/passert.h"
 #include "system/reset.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/version.h"
 
 #include "pbl/util/attributes.h"

@@ -20,6 +20,9 @@ typedef enum {
 
 typedef struct {
   ListNode node;
+  //! Unique, never reused. Deferred timer callbacks carry this instead of a
+  //! session pointer so they can detect a session that has already been freed.
+  uint32_t session_id;
   BlobDBSyncSessionState state;
   BlobDBId db_id;
   BlobDBDirtyItem *dirty_list;
@@ -37,6 +40,7 @@ status_t blob_db_sync_db(BlobDBId db_id);
 //! @param db_id the BlobDBId of the database to sync
 //! @param key the key to sync
 //! @param key_len the length of the key to sync
+//! @param last_updated the last-updated timestamp of the record
 status_t blob_db_sync_record(BlobDBId db_id, const void *key, int key_len, time_t last_updated);
 
 //! Get the sync session for a given ID. Will NOT return sessions for individual records

@@ -3,10 +3,10 @@
 
 #include "pbl/services/vibe_pattern.h"
 
-#include "drivers/accel.h"
-#include "drivers/vibe.h"
-#include "drivers/battery.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/accel.h>
+#include <pbl/drivers/vibe.h>
+#include <pbl/drivers/battery.h>
+#include <pbl/drivers/rtc.h>
 
 #include "kernel/pebble_tasks.h"
 
@@ -23,13 +23,29 @@
 #include "kernel/pbl_malloc.h"
 #include "syscall/syscall.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 
 #include <inttypes.h>
 #include <stddef.h>
 
 PBL_LOG_MODULE_DEFINE(service_vibe_pattern, CONFIG_SERVICE_VIBE_PATTERN_LOG_LEVEL);
+
+// Pattern lifecycle logs are DBG by default, elevated to INFO when the
+// Vibe Log Info debugging toggle is on so field captures include them.
+#if !defined(CONFIG_RECOVERY_FW)
+extern bool shell_prefs_get_vibe_log_info_enabled(void);
+#define VIBE_PATTERN_LOG(fmt, ...)                    \
+  do {                                                \
+    if (shell_prefs_get_vibe_log_info_enabled()) {    \
+      PBL_LOG_INFO(fmt, ##__VA_ARGS__);               \
+    } else {                                          \
+      PBL_LOG_DBG(fmt, ##__VA_ARGS__);                \
+    }                                                 \
+  } while (0)
+#else
+#define VIBE_PATTERN_LOG(fmt, ...) PBL_LOG_DBG(fmt, ##__VA_ARGS__)
+#endif
 
 typedef struct {
   ListNode list_node;
@@ -168,6 +184,9 @@ static RtcTicks s_pattern_start_ticks = 0;
 static uint64_t s_pattern_deadline_ms = 0;
 // s_vibe_strength is the current vibration strength setting of the motor
 static int32_t s_vibe_strength = VIBE_STRENGTH_OFF;
+// Tick at which the motor was last active (turned on or last transitioned off).
+// Used to suppress vibration-induced false shake/tap detections. 0 = never.
+static RtcTicks s_last_vibe_active_tick = 0;
 // s_vibe_strength_default is the vibrations trength of the motor used when one is not specified
 // explicitly, and can be changed in the notification vibration strength setting.
 static int32_t s_vibe_strength_default = VIBE_STRENGTH_MAX;
@@ -236,6 +255,7 @@ static void prv_vibes_set_vibe_strength(int32_t new_strength) {
   if (new_strength != VIBE_STRENGTH_OFF) {
     vibe_set_strength(new_strength);
     vibe_ctl(true /* on */);
+    s_last_vibe_active_tick = rtc_get_ticks();
     if (s_vibe_strength == VIBE_STRENGTH_OFF) {
       // Transitioning from off to on
       PBL_ANALYTICS_TIMER_START(vibrator_on_time_ms);
@@ -244,7 +264,9 @@ static void prv_vibes_set_vibe_strength(int32_t new_strength) {
   } else {
     vibe_ctl(false /* on */);
     if (s_vibe_strength != VIBE_STRENGTH_OFF) {
-      // Transitioning from on to off
+      // Transitioning from on to off; stamp the end so the shake holdoff runs
+      // from when the motor actually stopped.
+      s_last_vibe_active_tick = rtc_get_ticks();
       PBL_ANALYTICS_TIMER_STOP(vibrator_on_time_ms);
       prv_vibe_history_end_event();
     }
@@ -305,6 +327,7 @@ static void prv_timer_callback(void* data) {
     prv_vibes_set_vibe_strength(VIBE_STRENGTH_OFF);
     s_pattern_in_progress = false;
     s_pattern_owner = VibePatternOwner_Other;
+    VIBE_PATTERN_LOG("vibe_pattern: pattern complete");
   }
 
   mutex_unlock(s_vibe_pattern_mutex);
@@ -324,6 +347,16 @@ void vibes_set_default_vibe_strength(int32_t vibe_strength_default) {
 
 DEFINE_SYSCALL(int32_t, sys_vibe_get_vibe_strength, void) {
   return vibes_get_vibe_strength();
+}
+
+uint32_t vibes_get_time_since_last_vibe_ms(void) {
+  if (s_last_vibe_active_tick == 0) {
+    // Motor has never run this boot.
+    return UINT32_MAX;
+  }
+  RtcTicks elapsed = rtc_get_ticks() - s_last_vibe_active_tick;
+  uint64_t elapsed_ms = (uint64_t)elapsed * 1000 / RTC_TICKS_HZ;
+  return (elapsed_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)elapsed_ms;
 }
 
 bool prv_vibe_pattern_enqueue_step_raw(uint32_t duration_ms, int32_t strength) {
@@ -391,16 +424,9 @@ DEFINE_SYSCALL(void, sys_vibe_pattern_trigger_start, void) {
       total_duration_ms += step->duration_ms;
       step = (VibePatternStep *)list_get_next((ListNode *)step);
     }
-    extern bool shell_prefs_get_vibe_log_info_enabled(void);
-    if (shell_prefs_get_vibe_log_info_enabled()) {
-      PBL_LOG_INFO("vibe_pattern: trigger_start, %u steps, %" PRIu32
-                   "ms total, strength=%" PRId32,
-                   step_count, total_duration_ms, s_vibe_queue_head->strength);
-    } else {
-      PBL_LOG_DBG("vibe_pattern: trigger_start, %u steps, %" PRIu32
-                  "ms total, strength=%" PRId32,
-                  step_count, total_duration_ms, s_vibe_queue_head->strength);
-    }
+    VIBE_PATTERN_LOG("vibe_pattern: trigger_start, %u steps, %" PRIu32
+                     "ms total, strength=%" PRId32,
+                     step_count, total_duration_ms, s_vibe_queue_head->strength);
   }
 #endif
 
@@ -419,11 +445,18 @@ DEFINE_SYSCALL(void, sys_vibe_pattern_trigger_start, void) {
 static void prv_clear_pattern_locked(void) {
   mutex_assert_held_by_curr_task(s_vibe_pattern_mutex, true);
   new_timer_stop(s_pattern_timer);
+  unsigned int dropped_steps = 0;
   while (s_vibe_queue_head) {
     VibePatternStep *removed_node = s_vibe_queue_head;
     s_vibe_queue_head = (VibePatternStep*)list_pop_head((ListNode*)s_vibe_queue_head);
     kernel_free(removed_node);
+    dropped_steps++;
   }
+  // Log whether a pattern was still live and whether the motor was on: a
+  // clear that finds the motor on with no active pattern is a wedged vibe.
+  VIBE_PATTERN_LOG("vibe_pattern: clear, in_progress=%d, strength=%" PRId32
+                   ", %u steps dropped",
+                   s_pattern_in_progress, s_vibe_strength, dropped_steps);
   prv_vibes_set_vibe_strength(VIBE_STRENGTH_OFF);
   s_pattern_in_progress = false;
   s_pattern_owner = VibePatternOwner_Other;

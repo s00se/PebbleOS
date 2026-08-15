@@ -92,7 +92,7 @@ clar(ctx,
     sources_ant_glob = \
         " src/fw/services/light/service.c",
     test_sources_ant_glob = "test_light.c",
-    override_includes=['dummy_board'])
+    override_includes=['getafix_backlight'])
 
 clar(ctx,
     sources_ant_glob = \
@@ -253,6 +253,17 @@ clar(ctx,
         " src/fw/services/audio_endpoint/service.c " \
         " tests/fakes/fake_session.c"]),\
     test_sources_ant_glob = "test_audio_endpoint.c")
+
+clar(ctx,
+    sources_ant_glob = " ".join([
+        " src/fw/services/speaker/speaker_service.c " \
+        " src/fw/services/speaker/note_sequence.c " \
+        " src/fw/services/speaker/pcm_stream.c " \
+        " src/fw/services/speaker/track_player.c " \
+        " tests/fakes/fake_events.c"]),
+    test_sources_ant_glob = "test_speaker_service.c",
+    defines=['CONFIG_SPEAKER=1'],
+    override_includes=['dummy_board'])
 
 clar(ctx,
     sources_ant_glob = " ".join([
@@ -457,6 +468,11 @@ clar(ctx,
     sources_ant_glob = "src/fw/services/touch/touch.c" \
         " tests/fakes/fake_events.c",
     test_sources_ant_glob = "test_touch.c")
+
+clar(ctx,
+    sources_ant_glob = "src/fw/services/touch/touch_session.c" \
+        " tests/fakes/fake_rtc.c",
+    test_sources_ant_glob = "test_touch_session.c")
 
 clar(ctx,
     sources_ant_glob = \

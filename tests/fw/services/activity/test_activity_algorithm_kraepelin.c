@@ -3,8 +3,8 @@
 
 #include "applib/accel_service.h"
 #include "applib/data_logging.h"
-#include "drivers/ambient_light.h"
-#include "drivers/rtc.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/rtc.h>
 #include "pbl/services/regular_timer.h"
 #include "pbl/services/battery/battery_state.h"
 #include "pbl/services/activity/activity.h"
@@ -842,9 +842,9 @@ void test_activity_algorithm_kraepelin__steps_during_sleep(void) {
   s_kalg_sleep_m = 0;
 
   activity_algorithm_metrics_changed_notification();
-  uint16_t steps_awake_60m;
-  uint16_t steps_awake_100m;
-  uint16_t steps_awake_120m;
+  uint32_t steps_awake_60m;
+  uint32_t steps_awake_100m;
+  uint32_t steps_awake_120m;
 
   // Call the minute handler, which should zero out steps that occur while sleeping
   prv_feed_minute_data(60, &minute_data[0], false /*simulate_bg_delays*/);
@@ -880,9 +880,9 @@ void test_activity_algorithm_kraepelin__steps_during_sleep(void) {
   s_kalg_sleep_m = 100;
 
   activity_algorithm_metrics_changed_notification();
-  uint16_t steps_asleep_60m;
-  uint16_t steps_asleep_100m;
-  uint16_t steps_asleep_120m;
+  uint32_t steps_asleep_60m;
+  uint32_t steps_asleep_100m;
+  uint32_t steps_asleep_120m;
 
   // Call the minute handler, which should zero out steps that occur while sleeping
   prv_feed_minute_data(60, &minute_data[0], false /*simulate_bg_delays*/);

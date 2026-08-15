@@ -10,9 +10,9 @@
 #include <string.h>
 
 #include "console/prompt.h"
-#include "drivers/flash.h"
-#include "drivers/rtc.h"
-#include "drivers/task_watchdog.h"
+#include <pbl/drivers/flash.h>
+#include <pbl/drivers/rtc.h>
+#include <pbl/drivers/task_watchdog.h>
 #include "flash_region/filesystem_regions.h"
 #include "flash_region/flash_region.h"
 #include "kernel/pbl_malloc.h"
@@ -22,7 +22,7 @@
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/filesystem/flash_translation.h"
 #include "system/hexdump.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/attributes.h"
 #include "util/crc8.h"
@@ -453,12 +453,15 @@ static status_t write_pg_header(PageHeader *hdr, uint16_t pg) {
   return (S_SUCCESS);
 }
 
+static status_t unlink_flash_file(uint16_t page);
+
 // note: the goal here is to do as few flash reads as possible
 // while scanning the flash to find a given file.
 static status_t locate_flash_file(const char *name, uint16_t *page) {
   const int file_namelen_offset = FILEHEADER_OFFSET +
       offsetof(FileHeader, file_namelen);
   uint8_t namelen = strlen(name);
+  uint16_t corrupt_pg = INVALID_PAGE;
 
   for (uint16_t pg = 0; pg < s_pfs_page_count; pg++) {
     PageHeader pg_hdr;
@@ -481,8 +484,18 @@ static status_t locate_flash_file(const char *name, uint16_t *page) {
       if ((memcmp(name, file_name, namelen) == 0) && (!is_tmp_file(pg))) {
 
         if (read_header(pg, &pg_hdr, &file_hdr) == HdrCrcCorrupt) {
-          PBL_LOG_WRN("%d: CRC corrupt", pg);
+          PBL_LOG_WRN("CRC corrupt for page %d", pg);
+          if (corrupt_pg == INVALID_PAGE) {
+            corrupt_pg = pg;
+          }
           continue;
+        }
+
+        if (corrupt_pg != INVALID_PAGE) {
+          // A valid copy exists, so the corrupt match is a stale leftover:
+          // unlink it so it no longer shadows scans and can be reclaimed.
+          PBL_LOG_WRN("Unlinking stale corrupt copy of '%s' (page %u)", name, corrupt_pg);
+          unlink_flash_file(corrupt_pg);
         }
 
         *page = pg;
@@ -989,6 +1002,8 @@ typedef enum {
   NoFDAvail = -1
 } AvailFdStatus;
 
+//! @param name the name of the file to look for
+//! @param[out] fdp populated with the fd that was found or is available
 //! @param is_tmp specified to indicate whether or not you are looking for
 //!        a tmp file
 static AvailFdStatus get_avail_fd(const char *name, int *fdp, bool is_tmp) {
@@ -1607,7 +1622,7 @@ void pfs_remove_files(PFSFilenameTestCallback callback) {
     if (rv >= FDAlreadyLoaded) { // the file is in the cache
       if (rv == FDBusy) {
         PBL_CROAK("Cannot delete %s, it is currently in use",
-                  s_pfs_avail_fd[fd].file.name);
+                  PFS_FD(fd).file.name);
       }
       mark_fd_free(fd);
     }
@@ -1744,9 +1759,13 @@ static NOINLINE bool file_found_in_cache(const char *name, uint8_t op_flags, int
       // make sure the header is not corrupted
       PageHeader pg_hdr;
       FileHeader file_hdr;
-      if ((res = read_header(file->start_page, &pg_hdr, &file_hdr)) !=
-          PageAndFileHdrValid) {
-        mark_fd_free(fd); // file has been corrupted so clear fd
+      if (read_header(file->start_page, &pg_hdr, &file_hdr) != PageAndFileHdrValid) {
+        // Evict the entry and fall back to the flash scan (res stays >= 0 so
+        // the caller reuses this fd slot): the check may have hit a transient
+        // read glitch, and the scan can still find a valid copy.
+        PBL_LOG_WRN("Cached header check failed for '%s' (page %u), rescanning",
+                    name, file->start_page);
+        mark_fd_free(fd);
         goto cleanup;
       }
     }
@@ -1935,7 +1954,9 @@ static status_t copy_or_recover_gc_data(int fd, GCData *gcdata, bool do_copy) {
   for (uint16_t pg = 0; pg < PFS_PAGES_PER_ERASE_SECTOR; pg++) {
     uint32_t base_addr = prv_page_to_flash_offset(sector_start_page + pg);
 
-    uint32_t data_len;
+    // Default to 0 so a failed recover-path pfs_read below skips the copy loop
+    // instead of writing an uninitialized length's worth of garbage to flash.
+    uint32_t data_len = 0;
     PageHeader hdr;
     if (do_copy) {
       // if the sector is not active we only need to copy the page header info

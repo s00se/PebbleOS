@@ -23,7 +23,7 @@
 #include "pbl/services/timeline/timeline.h"
 #include "shell/prefs.h"
 #include "shell/system_theme.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/string.h"
 #include "util/time/time.h"
@@ -212,7 +212,14 @@ static uint16_t prv_alarm_list_get_num_rows_callback(struct MenuLayer *menu_laye
 static int16_t prv_alarm_list_get_cell_height_callback(struct MenuLayer *menu_layer,
                                                        MenuIndex *cell_index,
                                                        void *callback_context) {
+#if PBL_ROUND
+  // Unfocused rows collapse to a single line (time + on/off) so more alarms fit on screen
+  return menu_layer_is_index_selected(menu_layer, cell_index)
+             ? MENU_CELL_ROUND_FOCUSED_SHORT_CELL_HEIGHT
+             : 38;
+#else
   return menu_cell_basic_cell_height();
+#endif
 }
 
 static void prv_alarm_list_draw_row_callback(GContext *ctx, const Layer *cell_layer,

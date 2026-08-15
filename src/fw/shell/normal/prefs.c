@@ -13,8 +13,8 @@
 #include "apps/system/toggle/quiet_time.h"
 #include "board/board.h"
 #include "applib/graphics/gtypes.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
 #include "mfg/mfg_info.h"
 #include "pbl/os/mutex.h"
 #include "popups/timeline/peek.h"
@@ -22,7 +22,7 @@
 #include "process_management/process_manager.h"
 #include "pbl/services/accel_manager.h"
 #include "pbl/services/touch/touch.h"
-#include "pbl/services/powermode_service.h"
+#include "pbl/services/touch/touch_nav_service.h"
 #include "pbl/services/hrm/hrm_manager.h"
 #include "pbl/services/i18n/i18n.h"
 #include "resource/resource_ids.auto.h"
@@ -34,7 +34,7 @@
 #include "pbl/services/timeline/peek.h"
 #include "kernel/events.h"
 #include "kernel/event_loop.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/size.h"
 #include "pbl/util/uuid.h"
@@ -94,12 +94,21 @@ static uint8_t s_backlight_touch_wake = BacklightTouchWake_DoubleTap;
 #define PREF_KEY_TOUCH_ENABLED "touchEnabled"
 static bool s_touch_enabled = true;
 
+#define PREF_KEY_TOUCH_NAVIGATION_MENU "touchNavMenuEnabled"
+static bool s_touch_navigation_menu_enabled = true;
+
 #define PREF_KEY_MOTION_SENSITIVITY "motionSensitivity"
 static uint8_t s_motion_sensitivity = 55; // Default to Medium
 
 #ifdef CONFIG_DYNAMIC_BACKLIGHT
 #define PREF_KEY_BACKLIGHT_DYNAMIC_MODE "lightDynamicMode"
 static uint8_t s_backlight_dynamic_mode = BacklightDynamicMode_Standard;
+
+// Removed prefs; the key defines survive only so migration can convert/scrub
+// stored values.
+#define PREF_KEY_BACKLIGHT_DYNAMIC_INTENSITY_DEPRECATED "lightDynamicIntensity"
+#define PREF_KEY_DYNAMIC_BACKLIGHT_MIN_THRESHOLD "dynBacklightMinThreshold"
+#endif
 
 #define PREF_KEY_BACKLIGHT_PRESET "lightPreset"
 static uint8_t s_backlight_preset = BacklightPreset_Standard;
@@ -108,7 +117,9 @@ static uint8_t s_backlight_preset = BacklightPreset_Standard;
 // the underlying settings untouched.
 typedef struct BacklightPresetSettings {
   bool ambient_sensor_enabled;
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
   BacklightDynamicMode dynamic_mode;
+#endif
   uint8_t intensity;
   uint32_t timeout_ms;
   bool motion_enabled;
@@ -118,7 +129,9 @@ typedef struct BacklightPresetSettings {
 static const BacklightPresetSettings s_backlight_preset_settings[] = {
   [BacklightPreset_MaxBrightness] = {
     .ambient_sensor_enabled = true,
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
     .dynamic_mode = BacklightDynamicMode_Off,
+#endif
     .intensity = BACKLIGHT_INTENSITY_MAX,
     .timeout_ms = 5000,
     .motion_enabled = true,
@@ -126,7 +139,9 @@ static const BacklightPresetSettings s_backlight_preset_settings[] = {
   },
   [BacklightPreset_Standard] = {
     .ambient_sensor_enabled = true,
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
     .dynamic_mode = BacklightDynamicMode_Standard,
+#endif
     .intensity = BACKLIGHT_INTENSITY_HIGH,
     .timeout_ms = DEFAULT_BACKLIGHT_TIMEOUT_MS,
     .motion_enabled = true,
@@ -134,19 +149,15 @@ static const BacklightPresetSettings s_backlight_preset_settings[] = {
   },
   [BacklightPreset_BatterySaver] = {
     .ambient_sensor_enabled = true,
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
     .dynamic_mode = BacklightDynamicMode_Dim,
+#endif
     .intensity = BACKLIGHT_INTENSITY_MEDIUM,
     .timeout_ms = DEFAULT_BACKLIGHT_TIMEOUT_MS,
     .motion_enabled = true,
     .touch_wake = BacklightTouchWake_DoubleTap,
   },
 };
-
-// Removed prefs; the key defines survive only so migration can convert/scrub
-// stored values.
-#define PREF_KEY_BACKLIGHT_DYNAMIC_INTENSITY_DEPRECATED "lightDynamicIntensity"
-#define PREF_KEY_DYNAMIC_BACKLIGHT_MIN_THRESHOLD "dynBacklightMinThreshold"
-#endif
 
 #ifdef CONFIG_ORIENTATION_MANAGER
 #define PREF_KEY_DISPLAY_ORIENTATION_LEFT_HANDED "displayOrientationLeftHanded"
@@ -279,7 +290,6 @@ static uint16_t s_timeline_peek_before_time_m =
 static uint8_t s_timeline_peek_unsupported_face_mode = TimelinePeekUnsupportedFaceMode_None;
 #endif
 
-#define PREF_KEY_POWER_MODE "powerMode"
 #define PREF_KEY_COREDUMP_ON_REQUEST "coredumpOnRequest"
 #define PREF_KEY_ACCEL_SHAKE_LOG_INFO "accelShakeLogInfo"
 #define PREF_KEY_VIBE_LOG_INFO "vibeLogInfo"
@@ -289,7 +299,6 @@ static uint8_t s_timeline_peek_unsupported_face_mode = TimelinePeekUnsupportedFa
 #ifdef CONFIG_APP_SCALING
 #define PREF_KEY_LEGACY_APP_RENDER_MODE "legacyAppRenderMode"
 #endif
-static uint8_t s_power_mode = PowerMode_HighPerformance;
 static bool s_coredump_on_request_enabled = false;
 static bool s_accel_shake_log_info_enabled = false;
 static bool s_vibe_log_info_enabled = false;
@@ -429,10 +438,45 @@ static bool prv_set_s_backlight_touch_wake(uint8_t *wake) {
   return true;
 }
 
+#ifdef CONFIG_TOUCH
+// System touch navigation is active only while BOTH prefs are on: the master
+// "Touch" switch (the global touch kill, PREF_KEY_TOUCH_ENABLED) and the
+// "Touch Navigation" sub-pref. The enable/disable transaction (twin
+// subscriptions + permanent sensor hold) keys on the conjunction. Third-party
+// apps that explicitly opted in follow the master pref alone.
+static bool prv_touch_navigation_effective(void) {
+  return s_touch_enabled && s_touch_navigation_menu_enabled;
+}
+#endif
+
 static bool prv_set_s_touch_enabled(bool *enabled) {
+#ifdef CONFIG_TOUCH
+  const bool was_effective = prv_touch_navigation_effective();
+  const bool was_on = s_touch_enabled;
+#endif
   s_touch_enabled = *enabled;
 #ifdef CONFIG_TOUCH
   touch_service_set_globally_enabled(*enabled);
+  if (prv_touch_navigation_effective() != was_effective) {
+    touch_nav_set_enabled(prv_touch_navigation_effective());
+  } else if (was_on != *enabled) {
+    // Effective system nav unchanged (sub-pref off), but an opted-in running app follows the
+    // master "Touch" pref alone: re-evaluate its twin.
+    touch_nav_master_changed();
+  }
+#endif
+  return true;
+}
+
+static bool prv_set_s_touch_navigation_menu_enabled(bool *enabled) {
+#ifdef CONFIG_TOUCH
+  const bool was_effective = prv_touch_navigation_effective();
+#endif
+  s_touch_navigation_menu_enabled = *enabled;
+#ifdef CONFIG_TOUCH
+  if (prv_touch_navigation_effective() != was_effective) {
+    touch_nav_set_enabled(prv_touch_navigation_effective());
+  }
 #endif
   return true;
 }
@@ -446,6 +490,7 @@ static bool prv_set_s_backlight_dynamic_mode(uint8_t *mode) {
   s_backlight_dynamic_mode = *mode;
   return true;
 }
+#endif
 
 static bool prv_set_s_backlight_preset(uint8_t *preset) {
   if (*preset >= BacklightPresetCount) {
@@ -455,7 +500,6 @@ static bool prv_set_s_backlight_preset(uint8_t *preset) {
   s_backlight_preset = *preset;
   return true;
 }
-#endif
 
 static bool prv_set_s_motion_sensitivity(uint8_t *sensitivity) {
   // Clamp sensitivity to 0-100 range
@@ -526,6 +570,8 @@ static bool prv_set_s_language(uint8_t *language) {
   }
 
   s_language = *language;
+  shell_prefs_set_language_english(s_language == ShellLanguageEnglish);
+  i18n_set_resource(shell_prefs_get_language_resource_id());
   return true;
 }
 
@@ -733,15 +779,6 @@ static bool prv_set_s_timeline_peek_unsupported_face_mode(uint8_t *mode) {
 }
 #endif
 
-static bool prv_set_s_power_mode(uint8_t *mode) {
-  if (*mode >= PowerModeCount) {
-    return false;
-  }
-  s_power_mode = *mode;
-  powermode_service_set_enabled(*mode == PowerMode_LowPower);
-  return true;
-}
-
 static bool prv_set_s_coredump_on_request_enabled(bool *enabled) {
   s_coredump_on_request_enabled = *enabled;
   return true;
@@ -921,11 +958,9 @@ static void prv_pref_set(const char* key, const void *value, size_t val_len);
 void shell_prefs_init(void) {
 #ifdef CONFIG_QEMU
   s_backlight_intensity = BACKLIGHT_INTENSITY_MAX; // Blinding
-#elif defined(CONFIG_DYNAMIC_BACKLIGHT)
+#else
   // Match the Standard preset so fresh devices report Mode: Standard.
   s_backlight_intensity = s_backlight_preset_settings[BacklightPreset_Standard].intensity;
-#else
-  s_backlight_intensity = BACKLIGHT_INTENSITY_DEFAULT; // Medium
 #endif
   s_backlight_ambient_threshold = BOARD_CONFIG.ambient_light_dark_threshold;
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
@@ -947,6 +982,21 @@ void shell_prefs_init(void) {
   prv_convert_deprecated_dynamic_intensity_key(&file);
 #endif
 
+#if !TIMELINE_PEEK_WATCHFACE_FIT_SUPPORTED
+  {
+    // Discard any watchface-fit pref synced from a watch model that supports it.
+    // Check both key forms: locally-written keys include the null terminator,
+    // phone-originated BlobDB writes may not.
+    static const char *const fit_key = "timelineQuickViewWatchfaceFit";
+    for (size_t key_len = strlen(fit_key); key_len <= strlen(fit_key) + 1; key_len++) {
+      if (settings_file_get_len(&file, fit_key, key_len) > 0) {
+        PBL_LOG_INFO("Discarding unsupported pref: %s", fit_key);
+        settings_file_delete(&file, fit_key, key_len);
+      }
+    }
+  }
+#endif
+
   // Init state for each pref from our backing store
   uint32_t num_entries = ARRAY_LENGTH(s_prefs_table);
   const PrefsTableEntry *entry = s_prefs_table;
@@ -964,12 +1014,10 @@ void shell_prefs_init(void) {
     s_backlight_intensity = BACKLIGHT_INTENSITY_DEFAULT;
   }
 
-#ifdef CONFIG_DYNAMIC_BACKLIGHT
   // The boot load above bypasses the validating setters, so clamp here.
   if (s_backlight_preset >= BacklightPresetCount) {
     s_backlight_preset = BacklightPreset_Advanced;
   }
-#endif
 
 #if defined(CONFIG_AMBIENT_LIGHT_W1160)
   // One-time: the W1160 scale rework left old-scale ambient thresholds far below
@@ -1026,6 +1074,7 @@ void shell_prefs_init(void) {
 #ifdef CONFIG_TOUCH
   touch_set_backlight_enabled(s_backlight_touch_wake != BacklightTouchWake_Off);
   touch_service_set_globally_enabled(s_touch_enabled);
+  touch_nav_set_enabled(prv_touch_navigation_effective());
 #endif
 }
 
@@ -1330,6 +1379,14 @@ void touch_set_globally_enabled(bool enable) {
   prv_pref_set(PREF_KEY_TOUCH_ENABLED, &enable, sizeof(enable));
 }
 
+bool touch_navigation_menu_is_enabled(void) {
+  return s_touch_navigation_menu_enabled;
+}
+
+void touch_set_navigation_menu_enabled(bool enable) {
+  prv_pref_set(PREF_KEY_TOUCH_NAVIGATION_MENU, &enable, sizeof(enable));
+}
+
 #ifdef CONFIG_DYNAMIC_BACKLIGHT
 BacklightDynamicMode backlight_get_dynamic_mode(void) {
   return (BacklightDynamicMode)s_backlight_dynamic_mode;
@@ -1346,6 +1403,7 @@ void backlight_set_dynamic_mode(BacklightDynamicMode mode) {
 bool backlight_is_dynamic_intensity_enabled(void) {
   return s_backlight_dynamic_mode != BacklightDynamicMode_Off;
 }
+#endif
 
 BacklightPreset backlight_get_preset(void) {
   const uint8_t preset = s_backlight_preset;
@@ -1356,7 +1414,9 @@ BacklightPreset backlight_get_preset(void) {
   // they can drift independently (e.g. via phone sync).
   const BacklightPresetSettings *settings = &s_backlight_preset_settings[preset];
   if ((s_backlight_ambient_sensor_enabled != settings->ambient_sensor_enabled) ||
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
       (s_backlight_dynamic_mode != settings->dynamic_mode) ||
+#endif
       (s_backlight_intensity != settings->intensity) ||
       (s_backlight_timeout_ms != settings->timeout_ms) ||
       (s_backlight_motion_enabled != settings->motion_enabled) ||
@@ -1375,15 +1435,21 @@ void backlight_set_preset(BacklightPreset preset) {
   if (preset == BacklightPreset_Advanced) {
     return;
   }
+  // A concrete preset must re-enable the backlight: the only off toggle lives
+  // in the Advanced-only submenu, which these presets hide.
+  if (!backlight_is_enabled()) {
+    backlight_set_enabled(true);
+  }
   const BacklightPresetSettings *settings = &s_backlight_preset_settings[preset];
   backlight_set_ambient_sensor_enabled(settings->ambient_sensor_enabled);
+#ifdef CONFIG_DYNAMIC_BACKLIGHT
   backlight_set_dynamic_mode(settings->dynamic_mode);
+#endif
   backlight_set_intensity(settings->intensity);
   backlight_set_timeout_ms(settings->timeout_ms);
   backlight_set_motion_enabled(settings->motion_enabled);
   backlight_set_touch_wake(settings->touch_wake);
 }
-#endif
 
 uint8_t shell_prefs_get_motion_sensitivity(void) {
   return s_motion_sensitivity;
@@ -2071,15 +2137,6 @@ void shell_prefs_set_menu_scroll_vibe_behavior(MenuScrollVibeBehavior behavior) 
   prv_pref_set(PREF_KEY_MENU_SCROLL_VIBE_BEHAVIOR, &behavior, sizeof(MenuScrollVibeBehavior));
 }
 
-PowerMode shell_prefs_get_power_mode(void) {
-  return (PowerMode)s_power_mode;
-}
-
-void shell_prefs_set_power_mode(PowerMode mode) {
-  uint8_t val = (uint8_t)mode;
-  prv_pref_set(PREF_KEY_POWER_MODE, &val, sizeof(val));
-}
-
 void pbl_analytics_external_collect_settings(void) {
   PBL_ANALYTICS_SET_UNSIGNED(settings_health_tracking_enabled,
                              activity_prefs_tracking_is_enabled());
@@ -2091,7 +2148,6 @@ void pbl_analytics_external_collect_settings(void) {
   PBL_ANALYTICS_SET_UNSIGNED(settings_health_hrm_activity_tracking_enabled,
                              activity_prefs_hrm_activity_tracking_is_enabled());
 #endif
-  PBL_ANALYTICS_SET_UNSIGNED(settings_power_mode, shell_prefs_get_power_mode());
   PBL_ANALYTICS_SET_UNSIGNED(settings_motion_sensitivity, shell_prefs_get_motion_sensitivity());
   PBL_ANALYTICS_SET_UNSIGNED(settings_backlight_intensity_pct, backlight_get_intensity());
   PBL_ANALYTICS_SET_UNSIGNED(settings_backlight_timeout_s, backlight_get_timeout_ms() / 1000);

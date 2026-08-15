@@ -4,20 +4,21 @@
 #include "pbl/services/light.h"
 
 #include "board/board.h"
-#include "drivers/ambient_light.h"
-#include "drivers/backlight.h"
+#include <pbl/drivers/ambient_light.h>
+#include <pbl/drivers/backlight.h>
 #ifdef CONFIG_BACKLIGHT_HAS_COLOR
-#include "drivers/backlight.h"
+#include <pbl/drivers/backlight.h>
 #endif
-#include "drivers/rtc.h"
+#include <pbl/drivers/rtc.h>
 #include "kernel/events.h"
 #include "kernel/low_power.h"
 #include "pbl/services/analytics/analytics.h"
 #include "pbl/services/battery/battery_monitor.h"
 #include "pbl/services/new_timer/new_timer.h"
+#include "pbl/util/math.h"
 #include "services/light/als_screen_compensation.h"
 #include "syscall/syscall_internal.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "pbl/os/mutex.h"
 #include "system/passert.h"
 
@@ -36,10 +37,11 @@ typedef enum {
   LIGHT_STATE_OFF = 4,          // backlight off; idle state
 } BacklightState;
 
-// the time duration of the fade out
+// the time duration of a fade out from full intensity
 const uint32_t LIGHT_FADE_TIME_MS = 500;
-// number of fade-out steps
-const uint8_t LIGHT_FADE_STEPS = 20;
+// upper bound on fade-out steps
+#define LIGHT_FADE_MAX_STEPS 20U
+const uint8_t LIGHT_FADE_STEPS = LIGHT_FADE_MAX_STEPS;
 
 /*
  *              ^
@@ -98,11 +100,15 @@ static uint8_t s_color_preempt_refcount;
 //! For temporary disabling backlight (ie: low power mode)
 static bool s_backlight_allowed = false;
 
-//! Starting intensity for fade-out (captured when fade begins)
-static uint8_t s_fade_start_intensity = 0;
+//! Descending fade-out ladder: intensities that each land on a distinct
+//! hardware backlight level (built once when the fade begins)
+static uint8_t s_fade_levels[LIGHT_FADE_MAX_STEPS];
+static uint8_t s_fade_level_count = 0;
+static uint8_t s_fade_level_idx = 0;
 
-//! Fade step size (calculated once at start of fade to avoid rounding jitter)
-static uint8_t s_fade_step_size = 0;
+//! Dwell time per fade rung, paced so a fade from full intensity takes
+//! LIGHT_FADE_TIME_MS
+static uint32_t s_fade_step_ms = 0;
 
 //! Mutex to guard all the above state. We have a pattern of taking the lock in the public functions and assuming
 //! it's already taken in the prv_ functions.
@@ -292,7 +298,8 @@ static void prv_apply_rgb_color(void) {
 
 static void prv_change_brightness(uint8_t new_brightness) {
   // Scale the 0-100% to the maximum value allowed in hardware
-  uint8_t scaled_brightness = (new_brightness * (uint16_t)BOARD_CONFIG.backlight_on_percent) / 100U;
+  uint8_t scaled_brightness =
+      DIVIDE_CEIL(new_brightness * (uint16_t)BOARD_CONFIG.backlight_on_percent, 100U);
 
   // Bleed-through gate around backlight 0↔on edges: while the LED is
   // illuminating the cover glass, the W1160 photodiode would latch
@@ -328,6 +335,36 @@ static void prv_change_brightness(uint8_t new_brightness) {
 #endif
 }
 
+//! Hardware backlight level a given intensity would produce.
+static uint8_t prv_hw_level(uint8_t intensity) {
+  return backlight_get_level(
+      DIVIDE_CEIL(intensity * (uint16_t)BOARD_CONFIG.backlight_on_percent, 100U));
+}
+
+//! Build the descending ladder of intensities below `from` that each produce
+//! a distinct hardware backlight level. On boards with continuous control
+//! this is the classic LIGHT_FADE_STEPS-tick ramp; on quantized backlights
+//! (e.g. the AW9364E's 16 codes) redundant steps collapse so every rung is a
+//! visible change. `levels` must hold LIGHT_FADE_MAX_STEPS entries.
+static uint8_t prv_build_fade_ladder(uint8_t from, uint8_t *levels) {
+  if (from == 0U) {
+    return 0U;
+  }
+
+  const uint8_t step = DIVIDE_CEIL(from, LIGHT_FADE_MAX_STEPS);
+  uint8_t count = 0;
+  uint8_t prev_hw = prv_hw_level(from);
+
+  for (int16_t candidate = (int16_t)from - step; candidate > 0; candidate -= step) {
+    const uint8_t hw = prv_hw_level((uint8_t)candidate);
+    if (hw != prev_hw) {
+      levels[count++] = (uint8_t)candidate;
+      prev_hw = hw;
+    }
+  }
+  return count;
+}
+
 static void prv_change_state(BacklightState new_state) {
   BacklightState old_state = s_light_state;
   s_light_state = new_state;
@@ -348,23 +385,24 @@ static void prv_change_state(BacklightState new_state) {
                       light_timer_callback, NULL, 0 /* flags */);
       break;
     case LIGHT_STATE_ON_FADING:
-      // Capture the starting intensity only when we first enter fading state
+      // Build the fade ladder only when we first enter fading state. Pacing
+      // is normalized to a full-intensity fade, so fades from dimmer levels
+      // walk fewer rungs at the same rate and finish sooner.
       if (old_state != LIGHT_STATE_ON_FADING) {
-        s_fade_start_intensity = s_current_brightness;
-        s_fade_step_size = s_fade_start_intensity / LIGHT_FADE_STEPS;
-        if (s_fade_step_size == 0) {
-          s_fade_step_size = 1;
-        }
+        uint8_t scratch[LIGHT_FADE_MAX_STEPS];
+        s_fade_step_ms = LIGHT_FADE_TIME_MS / (prv_build_fade_ladder(100U, scratch) + 1U);
+        s_fade_level_count = prv_build_fade_ladder(s_current_brightness, s_fade_levels);
+        s_fade_level_idx = 0;
       }
 
-      if (s_fade_step_size >= s_current_brightness) {
+      if (s_fade_level_idx >= s_fade_level_count) {
         new_brightness = 0;
         s_light_state = LIGHT_STATE_OFF;
       } else {
-        new_brightness = s_current_brightness - s_fade_step_size;
+        new_brightness = s_fade_levels[s_fade_level_idx++];
 
         // Reschedule the timer so we step down the brightness again.
-        new_timer_start(s_timer_id, LIGHT_FADE_TIME_MS / LIGHT_FADE_STEPS, light_timer_callback, NULL, 0 /* flags */);
+        new_timer_start(s_timer_id, s_fade_step_ms, light_timer_callback, NULL, 0 /* flags */);
       }
       break;
     case LIGHT_STATE_OFF:
@@ -423,8 +461,8 @@ void light_init(void) {
   s_num_buttons_down = 0;
   s_user_controlled_state = false;
   s_touch_holding = false;
-  s_fade_start_intensity = 0;
-  s_fade_step_size = 0;
+  s_fade_level_count = 0;
+  s_fade_level_idx = 0;
   s_mutex = mutex_create();
 
   // Initialize intensity analytics tracking

@@ -3,10 +3,10 @@
 
 #include "kernel/util/standby.h"
 
-#include "drivers/display/display.h"
-#include "drivers/pmic.h"
+#include <pbl/drivers/display/display.h>
+#include <pbl/drivers/pmic.h>
 #include "system/bootbits.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/reset.h"
 #include "system/passert.h"
 
@@ -24,7 +24,7 @@ static NORETURN prv_enter_standby(void) {
 #endif
 
 NORETURN enter_standby(RebootReasonCode reason) {
-  PBL_LOG_ALWAYS("Preparing to enter standby mode.");
+  PBL_LOG_ALWAYS("Preparing to enter standby mode (reason %u).", (unsigned)reason);
 
   RebootReason reboot_reason = { reason, 0 };
   reboot_reason_set(&reboot_reason);

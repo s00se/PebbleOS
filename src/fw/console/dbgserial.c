@@ -4,7 +4,7 @@
 #include "dbgserial.h"
 
 #include "board/board.h"
-#include "drivers/uart.h"
+#include <pbl/drivers/uart.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #ifdef CONFIG_PULSE_EVERYWHERE
 #define DEFAULT_SERIAL_BAUD_RATE 1000000
 #else
-#define DEFAULT_SERIAL_BAUD_RATE 230400
+#define DEFAULT_SERIAL_BAUD_RATE 115200
 #endif
 
 

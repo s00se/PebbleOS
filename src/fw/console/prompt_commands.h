@@ -6,7 +6,7 @@
 #include "console/prompt.h"
 #include "console/pulse_internal.h"
 #include "pbl/services/filesystem/pfs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "pbl/util/size.h"
 
 extern void command_help(void);
@@ -24,6 +24,12 @@ extern void command_put_button_event(const char*, const char*);
 extern void command_button_press(const char*, const char*);
 extern void command_button_press_multiple(const char *, const char *, const char *, const char *);
 extern void command_button_press_short(const char*);
+#ifdef CONFIG_TOUCH
+extern void command_touch_nav_log(void);
+extern void command_touch_nav_enable(void);
+extern void command_touch_nav_disable(void);
+extern void command_notif_test(void);
+#endif
 
 extern void command_stats_dump_now(void);
 extern void command_stats_dump_current(void);
@@ -307,6 +313,14 @@ static const Command s_prompt_commands[] = {
   { "click short", command_button_press_short, 1 },
   { "click multiple", command_button_press_multiple, 4 },
   { "click long", command_button_press, 2 },
+#ifdef CONFIG_TOUCH
+  { "touch nav log", command_touch_nav_log, 0 },
+  { "touch nav enable", command_touch_nav_enable, 0 },
+  { "touch nav disable", command_touch_nav_disable, 0 },
+#ifndef CONFIG_RECOVERY_FW
+  { "notif test", command_notif_test, 0 },
+#endif  // CONFIG_RECOVERY_FW
+#endif
   { "reset", command_reset, 0 },
   { "crash", command_crash, 0 },
   { "hard crash", command_hard_crash, 0 },

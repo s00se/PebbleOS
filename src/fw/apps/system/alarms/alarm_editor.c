@@ -18,7 +18,7 @@
 #include "pbl/services/activity/activity.h"
 #include "pbl/services/alarms/alarm.h"
 #include "shell/prefs.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/util/size.h"
 
@@ -187,7 +187,7 @@ static void prv_time_picker_complete(TimeSelectionWindowData *time_picker_window
 
   if (data->creating_alarm) {
     DayPickerResult initial = {
-      .kind = DayPickerKindEveryday,
+      .kind = DayPickerKindJustOnce,
     };
     memset(initial.custom_days, 0, sizeof(initial.custom_days));
     DayPickerConfig config = {

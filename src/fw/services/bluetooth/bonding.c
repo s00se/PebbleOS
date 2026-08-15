@@ -9,7 +9,7 @@
 #include "pbl/services/bluetooth/local_addr.h"
 #include "kernel/event_loop.h"
 #include "kernel/pbl_malloc.h"
-#include "system/logging.h"
+#include <pbl/logging/logging.h>
 
 #include <bluetooth/bonding_sync.h>
 #include <bluetooth/bluetooth_types.h>
@@ -66,6 +66,7 @@ void bt_driver_cb_handle_create_bonding(const BleBonding *bonding,
                                                                    should_pin_address,
                                                                    flags);
   if (bonding_id == BT_BONDING_ID_INVALID) {
+    PBL_LOG_ERR("Failed to persist new bonding");
     return;
   }
 
