@@ -7,6 +7,8 @@
 #include <pbl/services/vibes/vibe_intensity.h>
 #include <pbl/util/bitops.h>
 
+#include <applib/event_service_client.h>
+#include <pbl/services/regular_timer.h>
 #include <kernel/events.h>
 #include <kernel/pbl_malloc.h>
 
@@ -67,8 +69,36 @@ void notifications_migrate_timezone(const int tz_diff) {
 void notification_storage_init(void);
 void vibe_intensity_init(void);
 
+#define NOTIFICATION_HISTORY_WIPE_MINUTES 30
+
+static RegularTimerInfo s_wipe_timer_info;
+static EventServiceInfo s_comm_session_event_info;
+
+static void prv_wipe_history(void) {
+  notification_storage_reset_and_init();
+}
+
+static void prv_wipe_timer_callback(void *data) {
+  prv_wipe_history();
+}
+
+static void prv_comm_session_event_handler(PebbleEvent *e, void *context) {
+  if (!e->bluetooth.comm_session_event.is_open && e->bluetooth.comm_session_event.is_system) {
+    prv_wipe_history();
+  }
+}
+
 void notifications_init(void) {
   notification_storage_init();
+
+  s_wipe_timer_info = (RegularTimerInfo){.cb = prv_wipe_timer_callback};
+  regular_timer_add_multiminute_callback(&s_wipe_timer_info, NOTIFICATION_HISTORY_WIPE_MINUTES);
+
+  s_comm_session_event_info = (EventServiceInfo){
+    .type = PEBBLE_COMM_SESSION_EVENT,
+    .handler = prv_comm_session_event_handler,
+  };
+  event_service_client_subscribe(&s_comm_session_event_info);
 }
 
 void notifications_add_notification(TimelineItem *notification) {
